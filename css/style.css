@@ -2,46 +2,56 @@
 
 /* Design Tokens */
 :root {
-  --color-navy: #07263D;
+  --color-navy: #0B2A4A;
+  --color-navy-soft: #0F3460;
   --color-aqua: #1FA6D8;
+  --color-aqua-soft: rgba(31, 166, 216, 0.12);
   --color-orange: #FF8A3D;
+  --color-orange-soft: rgba(255, 138, 61, 0.14);
   --color-green: #2E9E57;
+  --color-green-soft: rgba(46, 158, 87, 0.14);
   --color-red: #D93636;
+  --color-red-soft: rgba(217, 54, 54, 0.14);
   --color-grey: #7D8C99;
   --color-white: #FFFFFF;
   --color-light-bg: #F5F7FA;
-  --color-dark-bg: #07263D;
+  --color-dark-bg: #0B2A4A;
   --color-border: #DDE2E8;
   --color-text: #1A2A3A;
   --color-text-secondary: #4A5A6A;
   --color-card-bg: #FFFFFF;
 
-  --font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  --font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
+  --font-family-mono: 'SF Mono', 'Fira Code', 'Roboto Mono', Menlo, Consolas, monospace;
   --font-size-base: 16px;
   --font-size-sm: 15px;
   --font-size-md: 16px;
   --font-size-lg: 18px;
   --font-size-xl: 24px;
   --font-size-2xl: 28px;
+  --font-size-3xl: 36px;
 
   --spacing-xs: 4px;
   --spacing-sm: 8px;
   --spacing-md: 16px;
   --spacing-lg: 24px;
   --spacing-xl: 32px;
+  --spacing-2xl: 40px;
 
-  --radius-sm: 4px;
-  --radius-md: 8px;
-  --radius-lg: 12px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 16px;
   --radius-full: 999px;
 
-  --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
-  --shadow-md: 0 4px 6px rgba(0,0,0,0.07);
-  --shadow-lg: 0 10px 15px rgba(0,0,0,0.1);
+  --shadow-sm: 0 1px 2px rgba(0,0,0,0.06);
+  --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+  --shadow-lg: 0 12px 28px rgba(0,0,0,0.12);
+  --shadow-xl: 0 20px 40px rgba(0,0,0,0.18);
 
   --touch-target: 48px;
   --transition-fast: 150ms ease;
   --transition-normal: 250ms ease;
+  --transition-slow: 350ms cubic-bezier(0.22, 1, 0.36, 1);
 
   --z-header: 100;
   --z-modal: 200;
@@ -1315,9 +1325,102 @@ button, a, [role="button"], input[type="checkbox"], input[type="radio"], select 
   flex: 1;
 }
 
+/* Inspector dashboard header */
+.inspector-header {
+  background: linear-gradient(135deg, var(--color-navy) 0%, var(--color-navy-soft) 100%);
+  color: var(--color-white);
+  border-bottom: none;
+  margin: 0;
+  padding: var(--spacing-md) var(--spacing-lg);
+}
+
+.inspector-header .app-title {
+  color: var(--color-white);
+}
+
+.inspector-header .app-logo {
+  color: var(--color-aqua);
+}
+
+.case-count {
+  font-size: var(--font-size-sm);
+  font-weight: 600;
+  color: rgba(255, 255, 255, 0.85);
+  background: rgba(255, 255, 255, 0.12);
+  padding: var(--spacing-xs) var(--spacing-md);
+  border-radius: var(--radius-full);
+}
+
+/* Inspector toolbar (filter + sort) */
+.inspector-toolbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--spacing-md);
+  padding: var(--spacing-md) var(--spacing-lg);
+  background: var(--color-white);
+  border-bottom: 1px solid var(--color-border);
+  flex-wrap: wrap;
+  flex-shrink: 0;
+}
+
+/* Inspector page layout - fills viewport like the map screen */
+body.inspector-page {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  overflow: hidden;
+  background: var(--color-light-bg);
+}
+
+body.inspector-page .inspector-toolbar {
+  flex-shrink: 0;
+}
+
+body.inspector-page .table-container {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  background: var(--color-white);
+  padding: var(--spacing-md) var(--spacing-lg);
+}
+
+.toolbar-group {
+  display: flex;
+  align-items: center;
+  gap: var(--spacing-sm);
+  flex-wrap: wrap;
+}
+
+/* Select wrapper around native select */
+.select-wrapper {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+}
+
+.select-wrapper::after {
+  content: '';
+  position: absolute;
+  right: var(--spacing-sm);
+  pointer-events: none;
+  width: 0;
+  height: 0;
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--color-text-secondary);
+}
+
+.form-select--sm {
+  padding-right: var(--spacing-xl);
+  font-size: var(--font-size-sm);
+  min-width: 160px;
+}
+
 /* Inspector table */
 .table-container {
   overflow-x: auto;
+  flex: 1;
 }
 
 table {
@@ -1343,6 +1446,95 @@ th {
 
 tr:hover td {
   background: var(--color-light-bg);
+}
+
+/* Inspector table cell variants */
+.cases-table .cell-id {
+  width: 1%;
+  white-space: nowrap;
+}
+
+.cases-table .cell-id code {
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  color: var(--color-text-secondary);
+  background: var(--color-light-bg);
+  padding: 2px 6px;
+  border-radius: var(--radius-sm);
+}
+
+.cases-table .cell-type {
+  font-weight: 600;
+  text-transform: capitalize;
+  white-space: nowrap;
+}
+
+.cases-table .cell-registry {
+  white-space: nowrap;
+}
+
+.cases-table .cell-registry.registry-yes {
+  color: var(--color-green);
+}
+
+.cases-table .cell-registry.registry-no {
+  color: var(--color-orange);
+}
+
+.cases-table .cell-confidence {
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+.cases-table .cell-location {
+  font-family: var(--font-family-mono);
+  font-size: 12px;
+  white-space: nowrap;
+}
+
+.cases-table .cell-time {
+  white-space: nowrap;
+  color: var(--color-text-secondary);
+}
+
+.cases-table .cell-actions {
+  white-space: nowrap;
+  display: flex;
+  gap: var(--spacing-xs);
+}
+
+.cases-table .cell-actions .btn {
+  min-width: 64px;
+  padding: var(--spacing-xs) var(--spacing-sm);
+  font-size: var(--font-size-sm);
+}
+
+/* Inspector toolbar dark mode */
+@media (prefers-color-scheme: dark) {
+  .inspector-toolbar {
+    background: var(--color-card-bg);
+    border-color: var(--color-border);
+  }
+
+  .select-wrapper::after {
+    border-top-color: var(--color-text-secondary);
+  }
+
+  .cases-table th {
+    background: var(--color-light-bg);
+  }
+
+  .cases-table td {
+    border-color: var(--color-border);
+  }
+
+  .cases-table .cell-id code {
+    background: var(--color-card-bg);
+  }
+
+  .empty-state {
+    color: var(--color-text-secondary);
+  }
 }
 
 .table__thumb {
@@ -1680,6 +1872,13 @@ tr:hover td {
   width: 64px;
   height: 64px;
   opacity: 0.5;
+}
+
+.empty-state__hint {
+  font-size: var(--font-size-sm);
+  color: var(--color-text-secondary);
+  opacity: 0.7;
+  margin-top: var(--spacing-xs);
 }
 
 /* Settings - Improved visual hierarchy */
