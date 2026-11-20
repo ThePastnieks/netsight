@@ -170,7 +170,7 @@ const UIModule = (function() {
       const file = e.target.files[0];
       if (!file) return;
 
-      if (!file.type.match(/^image\/(jpeg|png)$/)) {
+      if (!file.type.match(/^image\/(jpeg|png)$/i)) {
         showToast('Please select a JPEG or PNG image', 'error');
         input.value = '';
         return;

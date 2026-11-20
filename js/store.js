@@ -33,6 +33,11 @@ const StoreModule = (function() {
 
   // Upload photo - handles both demo mode (blob URL) and production (Supabase)
   async function uploadPhoto(file, sightingId) {
+    // Validate file
+    if (!file || !(file instanceof File) || file.size === 0) {
+      throw new Error('Invalid or empty file');
+    }
+
     const client = getClient();
     if (!client) {
       // Demo mode: convert blob URL to data URL for persistence
@@ -40,7 +45,8 @@ const StoreModule = (function() {
     }
 
     const ext = file.type === 'image/png' ? 'png' : 'jpg';
-    const path = `${sightingId}.${ext}`;
+    // Use a more descriptive path to avoid conflicts
+    const path = `${sightingId}-${Date.now()}.${ext}`;
 
     const { data, error } = await client.storage
       .from('sightings-photos')
@@ -62,8 +68,20 @@ const StoreModule = (function() {
   async function blobToDataURL(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => resolve(reader.result);
-      reader.onerror = reject;
+      const timeout = setTimeout(() => {
+        console.error('File read timeout');
+        reject(new Error('File read timed out. Try a smaller image.'));
+      }, 10000); // 10 second timeout
+
+      reader.onload = () => {
+        clearTimeout(timeout);
+        resolve(reader.result);
+      };
+      reader.onerror = (e) => {
+        clearTimeout(timeout);
+        console.error('FileReader error:', e);
+        reject(new Error('Failed to read file: ' + (e?.message || 'Unknown error')));
+      };
       reader.readAsDataURL(file);
     });
   }
@@ -199,10 +217,10 @@ const StoreModule = (function() {
   const DEMO_STORAGE_KEY = 'netsight_sightings';
 
   // Helper function to create simple colored placeholder images as data URLs
-  // Using URI encoding for better browser compatibility
+  // Using base64 encoding for maximum browser compatibility
   function createPlaceholderDataUrl(color, label) {
     const svg = `<svg xmlns="${'http://www.w3.org/2000/svg'}" width="400" height="300" viewBox="0 0 400 300"><rect width="400" height="300" fill="${color}"></rect><text x="200" y="150" font-family="Arial,sans-serif" font-size="24" fill="white" text-anchor="middle" font-weight="bold">${label}</text></svg>`;
-    return 'data:image/svg+xml;charset=UTF-8,' + encodeURIComponent(svg);
+    return 'data:image/svg+xml;base64,' + btoa(svg);
   }
 
   // Initial demo sightings for new installations

@@ -85,8 +85,20 @@ const DetectModule = (function() {
   function fileToBase64(file) {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();
-      reader.onload = () => resolve(reader.result.split(',')[1]);
-      reader.onerror = reject;
+      const timeout = setTimeout(() => {
+        console.error('File read timeout');
+        reject(new Error('File read timed out. Try a smaller image.'));
+      }, 10000);
+
+      reader.onload = () => {
+        clearTimeout(timeout);
+        resolve(reader.result.split(',')[1]);
+      };
+      reader.onerror = (e) => {
+        clearTimeout(timeout);
+        console.error('FileReader error:', e);
+        reject(new Error('Failed to read file: ' + (e?.message || 'Unknown error')));
+      };
       reader.readAsDataURL(file);
     });
   }
