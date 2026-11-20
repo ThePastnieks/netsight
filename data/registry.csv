@@ -1,0 +1,11 @@
+id,owner_label,lat,lon,type
+R-001,Fisher A,56.9690,24.0980,buoy
+R-002,Fisher A,56.9702,24.1002,net
+R-003,Fisher B,56.9835,24.1121,trap
+R-004,Fisher B,56.9860,24.1150,net
+R-005,Fisher C,56.9951,24.1990,buoy
+R-006,Fisher C,56.9970,24.2010,net
+R-007,Fisher D,57.0385,24.2720,net
+R-008,Fisher D,57.0402,24.2751,buoy
+R-009,Fisher E,57.0450,24.2800,trap
+R-010,Fisher E,57.0470,24.2830,buoy

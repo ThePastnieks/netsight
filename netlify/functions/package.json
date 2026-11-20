@@ -1,0 +1,14 @@
+{
+  "name": "netsight-functions",
+  "version": "1.0.0",
+  "description": "Netlify Functions for NetSight detection API",
+  "main": "detect.js",
+  "type": "module",
+  "scripts": {
+    "test": "echo \"No tests specified\" && exit 0"
+  },
+  "dependencies": {},
+  "engines": {
+    "node": ">=18"
+  }
+}

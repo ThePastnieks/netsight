@@ -1,0 +1,71 @@
+# Netlify Configuration for NetSight
+
+[build]
+  # No build command - static site
+  command = ""
+  # Publish the netsight directory
+  publish = "."
+  # Functions directory
+  functions = "netlify/functions"
+
+[functions]
+  # Node.js version for functions
+  node_bundler = "esbuild"
+  included_files = ["**/*.js", "**/*.json"]
+
+# Environment variables (set in Netlify dashboard)
+# SUPABASE_URL = "https://your-project.supabase.co"
+# SUPABASE_ANON_KEY = "your-anon-key"
+# ROBOFLOW_API_URL = "https://detect.roboflow.com"
+# ROBOFLOW_MODEL_ID = "fishing-gear/1"
+# ROBOFLOW_API_KEY = "your-roboflow-key"
+# CLAUDE_API_KEY = "your-claude-api-key"
+
+# Headers for security and caching
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "strict-origin-when-cross-origin"
+    Permissions-Policy = "geolocation=*, camera=*, microphone=()"
+
+[[headers]]
+  for = "/js/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/css/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/assets/*"
+  [headers.values]
+    Cache-Control = "public, max-age=31536000, immutable"
+
+[[headers]]
+  for = "/data/*"
+  [headers.values]
+    Cache-Control = "public, max-age=3600"
+
+# Redirects for SPA-like behavior (if needed)
+[[redirects]]
+  from = "/inspector"
+  to = "/inspector.html"
+  status = 200
+
+[[redirects]]
+  from = "/app"
+  to = "/index.html"
+  status = 200
+
+# Functions configuration
+[functions.detect]
+  # Increase timeout for detection API calls
+  max_duration = 30
+
+# Build plugins (none needed for static site)
+# [[plugins]]
+#   package = "@netlify/plugin-functions-core"
