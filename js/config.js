@@ -1,62 +1,40 @@
 // NetSight Configuration
+
+// Build stamp — bump this on every release. It is used to bust browser caches
+// (asset query strings) and to purge stale service workers.
+const NETSIGHT_BUILD = '2026.11.24.2';
+
 const CONFIG = {
-  // Detection settings
-  CONF_THRESHOLD: 0.60,
+  BUILD: NETSIGHT_BUILD,
+
+  // ------------------------------------------------------------------ detect
+  // One endpoint, one job: send a photo, say whether there is a fishing net
+  // in the water. The model itself lives behind that endpoint — the app never
+  // talks to a vision provider directly and holds no keys.
+  //
+  // Expected request  (POST application/json)
+  //   { "image": "<base64 jpeg/png, no data: prefix>" }
+  //
+  // Expected response
+  //   {
+  //     "fishing_net": true,
+  //     "confidence": 0.93,
+  //     "class": "net",
+  //     "objects": [{ "class": "net", "confidence": 0.93, "box": [0.1, 0.2, 0.5, 0.3] }],
+  //     "model": "netsight-net-v1"
+  //   }
+  //
+  // Only `fishing_net` and `confidence` are required. See DETECT.md.
+  DETECT: {
+    endpoint: '/.netlify/functions/detect',
+    minConfidence: 0.5,     // below this the user must confirm the type
+    timeoutMs: 30000,
+    enabled: true
+  },
+
   MATCH_RADIUS_M: 50,
   MAX_PHOTO_MB: 5,
   MAX_IMAGE_SIDE_PX: 1280,
-
-  // API endpoints
-  DETECT_API_ENDPOINT: '/api/detect',
-
-  // Demo mode - uses stored results instead of live API calls
-  DEMO_MODE: true,
-
-  // Demo detection results for different scenarios
-  DEMO_DETECTION_RESULTS: {
-    buoy: {
-      primary_class: 'buoy',
-      primary_confidence: 0.87,
-      explanation: 'Orange spherical float with a flag and a rope in the water.',
-      model: 'demo-model',
-      detections: [{ class: 'buoy', confidence: 0.87, box: [0.41, 0.33, 0.12, 0.18] }]
-    },
-    float: {
-      primary_class: 'float',
-      primary_confidence: 0.72,
-      explanation: 'Small white floats along a net line on the water surface.',
-      model: 'demo-model',
-      detections: [{ class: 'float', confidence: 0.72, box: [0.35, 0.45, 0.3, 0.2] }]
-    },
-    net: {
-      primary_class: 'net',
-      primary_confidence: 0.78,
-      explanation: 'Green netting visible on the water surface near shore.',
-      model: 'demo-model',
-      detections: [{ class: 'net', confidence: 0.78, box: [0.2, 0.3, 0.6, 0.4] }]
-    },
-    trap: {
-      primary_class: 'trap',
-      primary_confidence: 0.81,
-      explanation: 'Wire mesh trap or pot sitting on the bottom, visible in shallow water.',
-      model: 'demo-model',
-      detections: [{ class: 'trap', confidence: 0.81, box: [0.4, 0.3, 0.2, 0.3] }]
-    },
-    low_confidence: {
-      primary_class: 'unknown',
-      primary_confidence: 0.42,
-      explanation: 'Unclear object, possibly a buoy or debris in glare.',
-      model: 'demo-model',
-      detections: [{ class: 'unknown', confidence: 0.42, box: [0.45, 0.4, 0.1, 0.15] }]
-    },
-    none: {
-      primary_class: 'none',
-      primary_confidence: 0.95,
-      explanation: 'Open water with no fishing gear visible.',
-      model: 'demo-model',
-      detections: []
-    }
-  },
 
   // Map configuration
   MAP_CENTER: [56.9496, 24.1052], // Riga
@@ -88,7 +66,18 @@ const CONFIG = {
     net: ['net'],
     trap: ['trap'],
     unknown: []
-  }
+  },
+
+  // ------------------------------------------------------------------ admin
+  ADMIN: {
+    // Change the PIN in Admin -> Security. Stored as a SHA-256 hash locally.
+    defaultPin: '2468',
+    sessionKey: 'netsight_admin_session',
+    pinKey: 'netsight_admin_pin'
+  },
+
+  DETECT_STORAGE_KEY: 'netsight_detect_settings',
+  THEME_STORAGE_KEY: 'netsight_theme'
 };
 
 // Export for use in other modules

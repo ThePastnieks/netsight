@@ -1,99 +1,140 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#07263D">
-  <title>NetSight Inspector Dashboard</title>
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="css/style.css">
+  <meta name="theme-color" content="#0B2A4A">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>NetSight — Inspector</title>
+
+  <script>
+  (function () {
+    var BUILD = '2026.11.24.2';
+    var KEY = 'netsight_build';
+    var seen = null;
+    try { seen = localStorage.getItem(KEY); } catch (e) {}
+    if (seen === BUILD) return;
+    try { localStorage.setItem(KEY, BUILD); } catch (e) {}
+    var tasks = [];
+    if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
+      tasks.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+        return Promise.all(regs.map(function (r) { return r.unregister(); }));
+      }).catch(function () {}));
+    }
+    if (window.caches && caches.keys) {
+      tasks.push(caches.keys().then(function (keys) {
+        return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+      }).catch(function () {}));
+    }
+    if (seen) { Promise.all(tasks).then(function () { location.reload(); }); }
+  })();
+  </script>
+
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/netsight-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.24.2">
+
+  <script src="js/config.js?v=2026.11.24.2"></script>
+  <script src="js/theme.js?v=2026.11.24.2"></script>
 </head>
-<body>
-  <!-- Loading overlay -->
+<body data-page="inspector">
+
   <div id="loading-overlay" class="loading-overlay" hidden>
-    <div class="loading-overlay__content">
-      <div class="loading-overlay__spinner spinner"></div>
-      <p id="loading-message">Loading cases...</p>
+    <div class="loading-overlay__card">
+      <div class="spinner"></div>
+      <p id="loading-message">Loading cases…</p>
     </div>
   </div>
 
-  <!-- Modal overlay -->
   <div id="modal-overlay" class="modal-overlay" hidden></div>
-
-  <!-- Toast container -->
   <div id="toast-container" class="toast-container"></div>
 
-  <header class="app-header inspector-header">
-    <div class="app-header__left">
-      <svg class="app-logo" viewBox="0 0 32 32" fill="none" aria-hidden="true">
-        <circle cx="16" cy="16" r="14" stroke="currentColor" stroke-width="2"/>
-        <path d="M16 6v12M10 16h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
-        <circle cx="16" cy="16" r="5" stroke="currentColor" stroke-width="1.5"/>
-      </svg>
-      <h1 class="app-title">Inspector Dashboard</h1>
-    </div>
-    <div class="app-header__right">
-      <span id="case-count" class="case-count">0 cases</span>
-    </div>
-  </header>
+  <div class="screen screen--active">
+    <header class="app-bar">
+      <div class="app-bar__left">
+        <img class="app-bar__logo" src="assets/netsight-logo.svg" alt="" width="26" height="26">
+        <div class="app-bar__titles">
+          <h1 class="app-bar__title">Inspector</h1>
+          <span class="app-bar__sub" id="case-count">0 cases</span>
+        </div>
+      </div>
+      <div class="app-bar__right">
+        <button type="button" class="icon-btn" data-theme-toggle aria-label="Theme">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
 
-  <!-- Filter/Sort bar -->
-  <div class="inspector-toolbar">
-    <div class="toolbar-group" role="group" aria-label="Status filters">
-      <button class="filter-chip filter-chip--active" data-filter="all">All</button>
-      <button class="filter-chip" data-filter="new">New</button>
-      <button class="filter-chip" data-filter="reported">Reported</button>
-      <button class="filter-chip" data-filter="checked">Checked</button>
-      <button class="filter-chip" data-filter="resolved">Resolved</button>
-      <button class="filter-chip" data-filter="false_alarm">False Alarm</button>
+    <div class="inspector-toolbar">
+      <div class="segmented" role="group" aria-label="Status filters">
+        <button type="button" class="filter-chip filter-chip--active" data-filter="all">All</button>
+        <button type="button" class="filter-chip" data-filter="new">New</button>
+        <button type="button" class="filter-chip" data-filter="reported">Reported</button>
+        <button type="button" class="filter-chip" data-filter="checked">Checked</button>
+        <button type="button" class="filter-chip" data-filter="resolved">Resolved</button>
+        <button type="button" class="filter-chip" data-filter="false_alarm">False alarm</button>
+      </div>
+      <div class="toolbar-group">
+        <label class="select-wrapper">
+          <span class="visually-hidden">Sort cases</span>
+          <select id="sort-select" class="form-select form-select--sm">
+            <option value="created_desc">Newest first</option>
+            <option value="created_asc">Oldest first</option>
+            <option value="status_priority">Priority</option>
+            <option value="confidence_desc">Confidence ↓</option>
+          </select>
+        </label>
+      </div>
     </div>
-    <div class="toolbar-group">
-      <label class="select-wrapper">
-        <select id="sort-select" class="form-select form-select--sm">
-          <option value="created_desc">Newest first</option>
-          <option value="created_asc">Oldest first</option>
-          <option value="status_priority">Priority</option>
-          <option value="confidence_desc">Confidence ↓</option>
-        </select>
-      </label>
+
+    <div class="table-container">
+      <table id="cases-table" class="cases-table">
+        <thead>
+          <tr>
+            <th scope="col">ID</th>
+            <th scope="col">Type</th>
+            <th scope="col">Status</th>
+            <th scope="col">Registry</th>
+            <th scope="col">Conf.</th>
+            <th scope="col">Location</th>
+            <th scope="col">Time</th>
+            <th scope="col">Actions</th>
+          </tr>
+        </thead>
+        <tbody id="cases-tbody"></tbody>
+      </table>
+
+      <div id="empty-state" class="empty-state" hidden>
+        <svg width="42" height="42" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <rect x="3" y="3" width="18" height="18" rx="3"></rect>
+          <path d="M9 9h6v6H9z"></path>
+        </svg>
+        <p>No cases found</p>
+        <p class="empty-state__hint">Adjust the filters or check back later.</p>
+      </div>
     </div>
   </div>
 
-  <!-- Cases table -->
-  <div class="table-container">
-    <table id="cases-table" class="cases-table" role="grid">
-      <thead>
-        <tr>
-          <th scope="col">ID</th>
-          <th scope="col">Type</th>
-          <th scope="col">Status</th>
-          <th scope="col">Registry</th>
-          <th scope="col">Confidence</th>
-          <th scope="col">Location</th>
-          <th scope="col">Time</th>
-          <th scope="col">Actions</th>
-        </tr>
-      </thead>
-      <tbody id="cases-tbody">
-        <!-- Rows inserted here -->
-      </tbody>
-    </table>
-    <div id="empty-state" class="empty-state" hidden>
-      <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
-        <rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect>
-        <path d="M9 9h6v6H9z"></path>
-      </svg>
-      <p>No cases found</p>
-      <p class="empty-state__hint">Adjust filters or check back later</p>
-    </div>
-  </div>
-
-  <!-- Load scripts -->
-  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
-  <script src="js/config.js"></script>
-  <script src="js/status.js"></script>
-  <script src="js/store.js"></script>
-  <script src="js/ui.js"></script>
-  <script src="js/inspector.js"></script>
+  <script src="js/status.js?v=2026.11.24.2"></script>
+  <script src="js/store.js?v=2026.11.24.2"></script>
+  <script src="js/ui.js?v=2026.11.24.2"></script>
+  <script src="js/inspector.js?v=2026.11.24.2"></script>
+  <script>
+    // Theme controls need the modal/toast helpers initialised on this page
+    document.addEventListener('DOMContentLoaded', () => { Theme.init(); });
+  </script>
 </body>
 </html>
+
+
+
+
+
+
+
+

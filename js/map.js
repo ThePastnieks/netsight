@@ -1,244 +1,363 @@
-// NetSight Map Module
-// Leaflet map, pins, popups, filters
+﻿// NetSight Map Module
+// Leaflet map, sighting markers, filtering and the location picker
 
 const MapModule = (function() {
   'use strict';
 
   let map = null;
-  let markersLayer = null;
-  let currentFilter = 'all';
-  let sightingsData = [];
+  let markerLayer = null;
+  let registryLayer = null;
+  let userMarker = null;
 
-  // Color mapping
-  const COLORS = {
-    green: '#2E9E57',
-    orange: '#FF8A3D',
-    red: '#D93636',
-    blue: '#1FA6D8',
-    grey: '#7D8C99'
+  let pickerMap = null;
+  let pickerMarker = null;
+  let pickerCallback = null;
+  let pickerLatLng = null;
+
+  let allSightings = [];
+  let filteredSightings = [];
+  let currentFilter = 'all';
+  let registryVisible = false;
+
+  const FILTER_LABELS = {
+    all: 'All sightings',
+    unverified: 'Unverified only',
+    reported: 'Reported only',
+    '24h': 'Last 24 hours',
+    checked: 'Checked',
+    resolved: 'Resolved'
   };
 
-  // Initialize map
-  function initMap(containerId = 'map', center = [56.9496, 24.1052], zoom = 12) {
+  function leafletAvailable() {
     if (typeof L === 'undefined') {
-      console.error('Leaflet not loaded');
-      return null;
+      console.error('Leaflet is not loaded');
+      return false;
     }
-
-    map = L.map(containerId).setView(center, zoom);
-
-    L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
-      maxZoom: 19,
-      attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-    }).addTo(map);
-
-    markersLayer = L.layerGroup().addTo(map);
-
-    return map;
+    return true;
   }
 
-  // Get map instance
+  // ---------------------------------------------------------------- main map
+
+  function initMap(containerId, center, zoom) {
+    const el = document.getElementById(containerId);
+    if (!el) {
+      console.error('Map container #' + containerId + ' not found');
+      return null;
+    }
+    if (!leafletAvailable()) return null;
+
+    try {
+      map = L.map(el, {
+        zoomControl: true,
+        attributionControl: true,
+        preferCanvas: true
+      }).setView(center || CONFIG.MAP_CENTER, zoom || CONFIG.MAP_ZOOM);
+
+      L.tileLayer(CONFIG.TILE_URL, {
+        maxZoom: 19,
+        attribution: CONFIG.TILE_ATTRIBUTION
+      }).addTo(map);
+
+      markerLayer = L.layerGroup().addTo(map);
+      registryLayer = L.layerGroup();
+
+      // Keep tiles crisp after screen changes
+      setTimeout(() => map && map.invalidateSize(), 200);
+
+      return map;
+    } catch (err) {
+      console.error('Map initialisation failed:', err);
+      return null;
+    }
+  }
+
   function getMap() {
     return map;
   }
 
-  // Build popup HTML for a sighting
-  function buildPopupHtml(sighting) {
-    const statusModule = window.StatusModule;
-    const statusLabel = statusModule ? statusModule.getStatusLabel(sighting.status) : sighting.status;
-    const pinColor = statusModule ? statusModule.pinColor(sighting) : 'orange';
-    const colorHex = COLORS[pinColor] || COLORS.orange;
-    const timeStr = new Date(sighting.created_at).toLocaleString();
-    const confidencePct = Math.round((sighting.confidence || 0) * 100);
-    const registryText = sighting.registry_match ? 'Registered' : 'Unverified';
-    const registryColor = sighting.registry_match ? COLORS.green : COLORS.orange;
+  function pinIcon(color) {
+    const hex = (CONFIG.COLORS && CONFIG.COLORS[color]) || CONFIG.COLORS.grey;
+    return L.divIcon({
+      className: 'map-pin',
+      html: `<span class="map-pin__dot" style="--pin-color:${hex}"></span>`,
+      iconSize: [24, 24],
+      iconAnchor: [12, 12],
+      popupAnchor: [0, -14]
+    });
+  }
 
-    let html = `
-      <div class="popup">
-        <div class="popup__header">
-          <span class="popup__type">${sighting.user_class || 'unknown'}</span>
-          <span class="popup__status" style="color: ${colorHex}; font-weight: 600;">${statusLabel}</span>
+  function popupHtml(s) {
+    const statusLabel = StatusModule.getStatusLabel(s.status);
+    const confidencePct = Math.round((s.confidence || 0) * 100);
+    const registryText = s.registry_match ? 'Registered' : 'Unverified';
+    const registryClass = s.registry_match ? 'registry-yes' : 'registry-no';
+
+    return `
+      <div class="map-popup">
+        <div class="map-popup__row">
+          <span class="status-badge status-badge--${s.status}">${UIModule.escapeHtml(statusLabel)}</span>
+          <span class="${registryClass}">${registryText}</span>
         </div>
-        <dl class="popup__meta">
-          <dt>Time</dt><dd>${timeStr}</dd>
-          <dt>Confidence</dt><dd>${confidencePct}%</dd>
-          <dt>Registry</dt><dd style="color: ${registryColor}; font-weight: 600;">${registryText}</dd>
-          <dt>Accuracy</dt><dd>${sighting.accuracy_m ? sighting.accuracy_m + ' m' : 'Manual'}</dd>
-        </dl>
-    `;
-
-    if (sighting.note) {
-      html += `<div class="popup__note">${escapeHtml(sighting.note)}</div>`;
-    }
-
-    html += `
-        <div class="popup__actions">
-          <button type="button" class="btn btn--primary btn--sm" onclick="window.MapModule?.openDetail('${sighting.id}')">Details</button>
-          <button type="button" class="btn btn--outline btn--sm" onclick="window.MapModule?.reportSighting('${sighting.id}')">Report</button>
+        <div class="map-popup__meta">
+          <span>${UIModule.escapeHtml(s.user_class || 'unknown')}</span>
+          <span>${confidencePct}%</span>
         </div>
+        <button type="button" class="btn btn--outline btn--sm map-popup__btn" data-id="${UIModule.escapeHtml(s.id)}">Details</button>
       </div>
     `;
-
-    return html;
   }
 
-  // Escape HTML
-  function escapeHtml(text) {
-    const div = document.createElement('div');
-    div.textContent = text;
-    return div.innerHTML;
-  }
+  function addMarker(s) {
+    if (typeof s.lat !== 'number' || typeof s.lon !== 'number') return;
 
-  // Add a pin to the map
-  function addPin(sighting) {
-    if (!map || !markersLayer) return null;
+    const marker = L.marker([s.lat, s.lon], {
+      icon: pinIcon(StatusModule.pinColor(s)),
+      title: s.user_class || 'sighting'
+    }).addTo(markerLayer);
 
-    const pinColor = window.StatusModule ? window.StatusModule.pinColor(sighting) : 'orange';
-    const colorHex = COLORS[pinColor] || COLORS.orange;
+    marker.bindPopup(popupHtml(s), { minWidth: 180 });
 
-    const marker = L.circleMarker([sighting.lat, sighting.lon], {
-      radius: 9,
-      color: '#07263D',
-      weight: 2,
-      fillColor: colorHex,
-      fillOpacity: 0.95
+    marker.on('popupopen', e => {
+      const popupEl = e.popup.getElement();
+      if (!popupEl) return;
+      const btn = popupEl.querySelector('.map-popup__btn');
+      if (btn) {
+        btn.addEventListener('click', () => {
+          const found = allSightings.find(x => x.id === btn.dataset.id);
+          if (found) UIModule.showDetailView(found);
+        });
+      }
     });
-
-    marker.bindPopup(buildPopupHtml(sighting), {
-      minWidth: 240,
-      maxWidth: 300
-    });
-
-    marker.sightingId = sighting.id;
-    marker.addTo(markersLayer);
-
-    return marker;
   }
 
-  // Clear all pins
-  function clearPins() {
-    if (markersLayer) {
-      markersLayer.clearLayers();
+  function matchesFilter(s, filter) {
+    switch (filter) {
+      case 'all':
+        return true;
+      case 'unverified':
+        return !s.registry_match;
+      case '24h': {
+        const created = new Date(s.created_at).getTime();
+        return Number.isFinite(created) && (Date.now() - created) <= 86400000;
+      }
+      case 'checked':
+        return s.status === 'checked';
+      case 'reported':
+        return s.status === 'reported';
+      case 'resolved':
+        return s.status === 'resolved';
+      default:
+        return true;
     }
   }
 
-  // Render all sightings with current filter
   function renderSightings(sightings) {
-    sightingsData = sightings || [];
-    clearPins();
+    allSightings = Array.isArray(sightings) ? sightings.slice() : [];
+    applyFilter();
+  }
 
-    const filtered = filterSightings(sightingsData, currentFilter);
-    filtered.forEach(addPin);
+  function applyFilter() {
+    filteredSightings = allSightings.filter(s => matchesFilter(s, currentFilter));
 
-    // Fit bounds if there are markers
-    if (filtered.length > 0 && markersLayer.getLayers().length > 0) {
-      const group = new L.featureGroup(markersLayer.getLayers());
-      map.fitBounds(group.getBounds().pad(0.1));
+    if (markerLayer) {
+      markerLayer.clearLayers();
+      filteredSightings.forEach(addMarker);
     }
 
-    return filtered.length;
+    const label = document.getElementById('filter-label');
+    if (label) {
+      const text = FILTER_LABELS[currentFilter] || 'All sightings';
+      label.textContent = `${text} · ${filteredSightings.length}`;
+    }
+
+    return filteredSightings;
   }
 
-  // Filter sightings
-  function filterSightings(sightings, filter) {
-    if (!filter || filter === 'all') return sightings;
-
-    const now = Date.now();
-    const dayMs = 24 * 60 * 60 * 1000;
-
-    return sightings.filter(s => {
-      switch (filter) {
-        case 'unverified':
-          return s.status === 'new' && !s.registry_match;
-        case 'reported':
-          return s.status === 'reported';
-        case '24h':
-          return new Date(s.created_at).getTime() > now - dayMs;
-        case 'checked':
-          return s.status === 'checked';
-        case 'resolved':
-          return s.status === 'resolved' || s.status === 'false_alarm';
-        default:
-          return true;
-      }
-    });
-  }
-
-  // Set filter and re-render
   function setFilter(filter) {
-    currentFilter = filter;
-    if (sightingsData.length > 0) {
-      renderSightings(sightingsData);
-    }
-    updateFilterUI(filter);
+    currentFilter = filter || 'all';
+    return applyFilter();
   }
 
-  // Update filter chip UI
-  function updateFilterUI(activeFilter) {
-    document.querySelectorAll('.filter-chip').forEach(chip => {
-      const filter = chip.dataset.filter;
-      if (filter === activeFilter) {
-        chip.classList.add('filter-chip--active');
-      } else {
-        chip.classList.remove('filter-chip--active');
-      }
-    });
-  }
-
-  // Open detail view (to be implemented by app)
-  function openDetail(sightingId) {
-    const sighting = sightingsData.find(s => s.id === sightingId);
-    if (sighting && window.App && window.App.showDetail) {
-      window.App.showDetail(sighting);
-    }
-  }
-
-  // Report sighting (to be implemented by app)
-  function reportSighting(sightingId) {
-    const sighting = sightingsData.find(s => s.id === sightingId);
-    if (sighting && window.App && window.App.showReport) {
-      window.App.showReport(sighting);
-    }
-  }
-
-  // Get current filter
   function getFilter() {
     return currentFilter;
   }
 
-  // Get sighting by ID
-  function getSighting(id) {
-    return sightingsData.find(s => s.id === id) || null;
+  function getVisibleSightings() {
+    return filteredSightings.slice();
   }
 
-  // Pan to sighting
-  function panToSighting(sighting) {
-    if (map && sighting) {
-      map.setView([sighting.lat, sighting.lon], 15);
+  function refresh() {
+    return applyFilter();
+  }
+
+  function focusOn(lat, lon, zoom) {
+    if (!map) return;
+    map.setView([lat, lon], zoom || Math.max(map.getZoom(), 14));
+  }
+
+  function focusSighting(id) {
+    const s = allSightings.find(x => x.id === id);
+    if (s) focusOn(s.lat, s.lon, 16);
+  }
+
+  // --------------------------------------------------------- user position
+
+  function showUserPosition(lat, lon, accuracy) {
+    if (!map || !leafletAvailable()) return;
+    const latlng = [lat, lon];
+
+    if (!userMarker) {
+      userMarker = L.circleMarker(latlng, {
+        radius: 7,
+        color: '#1FA6D8',
+        weight: 2,
+        fillColor: '#1FA6D8',
+        fillOpacity: 0.5
+      }).addTo(map);
+    } else {
+      userMarker.setLatLng(latlng);
+    }
+
+    if (accuracy && accuracy < 500) {
+      if (!userMarker._accuracyCircle) {
+        userMarker._accuracyCircle = L.circle(latlng, {
+          radius: accuracy,
+          color: '#1FA6D8',
+          weight: 1,
+          opacity: 0.4,
+          fillColor: '#1FA6D8',
+          fillOpacity: 0.08
+        }).addTo(map);
+      } else {
+        userMarker._accuracyCircle.setLatLng(latlng).setRadius(accuracy);
+      }
     }
   }
 
-  // Public API
+  // ---------------------------------------------------------- registry layer
+
+  async function toggleRegistryLayer(show) {
+    if (!map) return false;
+    registryVisible = !!show;
+
+    if (!registryVisible) {
+      registryLayer.clearLayers();
+      map.removeLayer(registryLayer);
+      return false;
+    }
+
+    const registry = RegistryModule.registry || await RegistryModule.loadRegistry();
+    registryLayer.clearLayers();
+
+    registry.forEach(item => {
+      L.circle([item.lat, item.lon], {
+        radius: CONFIG.MATCH_RADIUS_M,
+        color: '#2E9E57',
+        weight: 1,
+        opacity: 0.7,
+        fillColor: '#2E9E57',
+        fillOpacity: 0.12
+      })
+        .bindPopup(
+          `<strong>${UIModule.escapeHtml(item.id)}</strong><br>` +
+          `${UIModule.escapeHtml(item.type)} · ${UIModule.escapeHtml(item.owner_label || '')}`
+        )
+        .addTo(registryLayer);
+    });
+
+    registryLayer.addTo(map);
+    return true;
+  }
+
+  // ---------------------------------------------------------- location picker
+
+  function openPicker(onConfirm, initial) {
+    const modal = document.getElementById('map-picker-modal');
+    if (!modal) {
+      console.error('Map picker modal not found');
+      return;
+    }
+
+    pickerCallback = onConfirm || null;
+    const start = initial || LocationModule.getLastPosition() || {
+      lat: CONFIG.MAP_CENTER[0],
+      lon: CONFIG.MAP_CENTER[1]
+    };
+    pickerLatLng = { lat: start.lat, lon: start.lon };
+
+    modal.hidden = false;
+    void modal.offsetHeight;
+    modal.classList.add('sheet--visible');
+
+    if (!pickerMap) {
+      pickerMap = L.map('map-picker-map').setView([start.lat, start.lon], 14);
+      L.tileLayer(CONFIG.TILE_URL, {
+        maxZoom: 19,
+        attribution: CONFIG.TILE_ATTRIBUTION
+      }).addTo(pickerMap);
+
+      pickerMap.on('click', e => {
+        setPickerPoint(e.latlng.lat, e.latlng.lng);
+      });
+    } else {
+      pickerMap.setView([start.lat, start.lon], 14);
+    }
+
+    setPickerPoint(start.lat, start.lon);
+    setTimeout(() => pickerMap.invalidateSize(), 150);
+  }
+
+  function setPickerPoint(lat, lon) {
+    pickerLatLng = { lat, lon };
+    if (!pickerMap) return;
+
+    if (!pickerMarker) {
+      pickerMarker = L.marker([lat, lon], { draggable: true, icon: pinIcon('blue') }).addTo(pickerMap);
+      pickerMarker.on('dragend', () => {
+        const p = pickerMarker.getLatLng();
+        pickerLatLng = { lat: p.lat, lon: p.lng };
+      });
+    } else {
+      pickerMarker.setLatLng([lat, lon]);
+    }
+  }
+
+  function closePicker() {
+    const modal = document.getElementById('map-picker-modal');
+    if (!modal) return;
+    modal.classList.remove('sheet--visible');
+    modal.hidden = true;
+  }
+
+  function confirmPicker() {
+    const cb = pickerCallback;
+    const point = pickerLatLng;
+    pickerCallback = null;
+    closePicker();
+    if (cb && point) cb(point.lat, point.lon);
+  }
+
   return {
     initMap,
     getMap,
-    addPin,
-    clearPins,
     renderSightings,
     setFilter,
     getFilter,
-    getSighting,
-    panToSighting,
-    openDetail,
-    reportSighting,
-    filterSightings,
-    buildPopupHtml
+    getVisibleSightings,
+    refresh,
+    focusOn,
+    focusSighting,
+    showUserPosition,
+    toggleRegistryLayer,
+    openPicker,
+    closePicker,
+    confirmPicker
   };
 })();
 
-// Export
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = MapModule;
 } else {
   window.MapModule = MapModule;
 }
+

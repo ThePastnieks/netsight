@@ -1,163 +1,132 @@
 // NetSight Location Module
-// Handles GPS, EXIF fallback, and manual map placement
+// Geolocation watch, manual coordinates and distance helpers
 
 const LocationModule = (function() {
   'use strict';
 
   const R_EARTH_M = 6371000;
 
-  // Convert degrees to radians
-  function toRad(deg) {
-    return deg * Math.PI / 180;
+  let watchId = null;
+  let lastPosition = null;
+  let supported = typeof navigator !== 'undefined' && !!navigator.geolocation;
+  let onUpdateHandler = null;
+  let onErrorHandler = null;
+
+  function init() {
+    supported = typeof navigator !== 'undefined' && !!navigator.geolocation;
+    if (!supported) {
+      console.warn('Geolocation is not supported by this browser');
+    }
+    return supported;
   }
 
-  // Haversine distance calculation
-  function haversineMeters(lat1, lon1, lat2, lon2) {
-    const dLat = toRad(lat2 - lat1);
-    const dLon = toRad(lon2 - lon1);
-    const a = Math.sin(dLat / 2) ** 2 +
-              Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
-    return 2 * R_EARTH_M * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  function isSupported() {
+    return supported;
   }
 
-  // Get position from browser Geolocation API
-  function getBrowserPosition(options = {}) {
-    return new Promise((resolve, reject) => {
-      if (!navigator.geolocation) {
-        reject(new Error('Geolocation not supported'));
-        return;
-      }
+  // Start watching the position; onUpdate receives { lat, lon, accuracy }
+  function startWatch(onUpdate, onError) {
+    if (!supported) {
+      if (onError) onError(new Error('Geolocation unavailable'));
+      return false;
+    }
+    if (watchId !== null) return true;
 
-      const opts = {
-        enableHighAccuracy: true,
-        timeout: 10000,
-        maximumAge: 0,
-        ...options
-      };
+    onUpdateHandler = onUpdate || null;
+    onErrorHandler = onError || null;
 
-      navigator.geolocation.getCurrentPosition(
-        pos => resolve({
+    watchId = navigator.geolocation.watchPosition(
+      pos => {
+        lastPosition = {
           lat: pos.coords.latitude,
           lon: pos.coords.longitude,
-          accuracy_m: pos.coords.accuracy,
-          source: 'gps'
-        }),
-        err => reject(err),
-        opts
+          accuracy: pos.coords.accuracy,
+          timestamp: pos.timestamp
+        };
+        if (onUpdateHandler) onUpdateHandler(lastPosition);
+      },
+      err => {
+        console.warn('Geolocation error:', err.message);
+        if (onErrorHandler) onErrorHandler(err);
+      },
+      { enableHighAccuracy: true, maximumAge: 10000, timeout: 15000 }
+    );
+
+    return true;
+  }
+
+  function stopWatch() {
+    if (watchId !== null && supported) {
+      navigator.geolocation.clearWatch(watchId);
+    }
+    watchId = null;
+  }
+
+  // One-off position request
+  function getCurrentPosition(options = {}) {
+    return new Promise((resolve, reject) => {
+      if (!supported) {
+        reject(new Error('Geolocation unavailable'));
+        return;
+      }
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          lastPosition = {
+            lat: pos.coords.latitude,
+            lon: pos.coords.longitude,
+            accuracy: pos.coords.accuracy,
+            timestamp: pos.timestamp
+          };
+          resolve(lastPosition);
+        },
+        err => reject(new Error(err.message || 'Could not get position')),
+        {
+          enableHighAccuracy: true,
+          maximumAge: options.maximumAge || 0,
+          timeout: options.timeout || 15000
+        }
       );
     });
   }
 
-  // Extract GPS from EXIF data
-  async function getExifPosition(file) {
-    if (typeof ExifReader === 'undefined') {
-      throw new Error('ExifReader not loaded');
-    }
-
-    try {
-      const tags = await ExifReader.load(file);
-      const lat = tags.GPSLatitude?.value;
-      const lon = tags.GPSLongitude?.value;
-      const latRef = tags.GPSLatitudeRef?.value;
-      const lonRef = tags.GPSLongitudeRef?.value;
-
-      if (!lat || !lon) {
-        throw new Error('No GPS data in EXIF');
-      }
-
-      // Convert DMS to decimal degrees
-      const convertDMS = (dms, ref) => {
-        const degrees = dms[0] + dms[1] / 60 + dms[2] / 3600;
-        return (ref === 'S' || ref === 'W') ? -degrees : degrees;
-      };
-
-      return {
-        lat: convertDMS(lat, latRef),
-        lon: convertDMS(lon, lonRef),
-        accuracy_m: null,
-        source: 'exif'
-      };
-    } catch (err) {
-      throw new Error('EXIF parsing failed: ' + err.message);
-    }
+  function getLastPosition() {
+    return lastPosition;
   }
 
-  // Get position with fallback chain: GPS -> EXIF -> manual
-  async function getPosition(photoFile = null) {
-    // 1. Try browser GPS
-    try {
-      const pos = await getBrowserPosition();
-      return pos;
-    } catch (err) {
-      console.warn('Browser GPS failed:', err.message);
-    }
-
-    // 2. Try EXIF from photo
-    if (photoFile) {
-      try {
-        const pos = await getExifPosition(photoFile);
-        return pos;
-      } catch (err) {
-        console.warn('EXIF GPS failed:', err.message);
-      }
-    }
-
-    // 3. Manual placement required
-    throw new Error('MANUAL_PLACEMENT_REQUIRED');
+  function setManualPosition(lat, lon, accuracy = null) {
+    lastPosition = { lat, lon, accuracy, timestamp: Date.now(), manual: true };
+    return lastPosition;
   }
 
-  // Validate coordinates
-  function validateCoordinates(lat, lon) {
-    return lat >= -90 && lat <= 90 && lon >= -180 && lon <= 180;
+  function isWatching() {
+    return watchId !== null;
   }
 
-  // Format position for display
-  function formatPosition(lat, lon, accuracy) {
-    const latStr = lat.toFixed(5);
-    const lonStr = lon.toFixed(5);
-    const accStr = accuracy ? ` (±${Math.round(accuracy)} m)` : ' (manual)';
-    return `${latStr}, ${lonStr}${accStr}`;
+  function toRad(deg) {
+    return deg * Math.PI / 180;
   }
 
-  // Initialize location module (for future expansion)
-  function init() {
-    // Currently no initialization needed
-    return true;
+  function haversineMeters(lat1, lon1, lat2, lon2) {
+    const dLat = toRad(lat2 - lat1);
+    const dLon = toRad(lon2 - lon1);
+    const a = Math.sin(dLat / 2) ** 2 +
+      Math.cos(toRad(lat1)) * Math.cos(toRad(lat2)) * Math.sin(dLon / 2) ** 2;
+    return 2 * R_EARTH_M * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
   }
 
-  // Start GPS watch for position updates
-  let watchId = null;
-  function startWatch(callback) {
-    if (!navigator.geolocation) return null;
-    watchId = navigator.geolocation.watchPosition(callback, console.warn, {
-      enableHighAccuracy: true,
-      maximumAge: 0
-    });
-    return watchId;
-  }
-
-  function stopWatch() {
-    if (watchId !== null && navigator.geolocation) {
-      navigator.geolocation.clearWatch(watchId);
-      watchId = null;
-    }
-  }
-
-  // Public API
   return {
-    getPosition,
-    getBrowserPosition,
-    getExifPosition,
-    haversineMeters,
-    validateCoordinates,
-    formatPosition,
     init,
+    isSupported,
     startWatch,
-    stopWatch
+    stopWatch,
+    isWatching,
+    getCurrentPosition,
+    getLastPosition,
+    setManualPosition,
+    haversineMeters
   };
 })();
 
-// Export for modules
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = LocationModule;
 } else {

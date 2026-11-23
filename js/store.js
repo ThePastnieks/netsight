@@ -365,6 +365,68 @@ const StoreModule = (function() {
     return sightings[idx];
   }
 
+  // ------------------------------------------------------------- deletion
+
+  // Supabase delete
+  async function deleteSighting(id) {
+    const client = getClient();
+    if (!client) throw new Error('Supabase not configured');
+
+    const { error } = await client.from('sightings').delete().eq('id', id);
+    if (error) throw error;
+    return true;
+  }
+
+  // Demo delete
+  async function demoDeleteSighting(id) {
+    const sightings = getDemoSightings();
+    const next = sightings.filter(s => s.id !== id);
+    if (next.length === sightings.length) return false;
+    saveDemoSightings(next);
+    return true;
+  }
+
+  async function deleteSightingUnified(id) {
+    const client = getClient();
+    if (client) return deleteSighting(id);
+    return demoDeleteSighting(id);
+  }
+
+  // Bulk delete — returns { deleted, failed }
+  async function deleteManyUnified(ids) {
+    const list = Array.isArray(ids) ? ids.slice() : [];
+    let deleted = 0;
+    const failed = [];
+
+    if (list.length === 0) return { deleted, failed };
+
+    const client = getClient();
+    if (client) {
+      const { error } = await client.from('sightings').delete().in('id', list);
+      if (error) return { deleted: 0, failed: list };
+      return { deleted: list.length, failed };
+    }
+
+    const sightings = getDemoSightings();
+    const drop = new Set(list);
+    const kept = sightings.filter(s => !drop.has(s.id));
+    deleted = sightings.length - kept.length;
+    saveDemoSightings(kept);
+    list.forEach(id => {
+      if (kept.some(s => s.id === id)) failed.push(id);
+    });
+    return { deleted, failed };
+  }
+
+  // Wipe every sighting (demo store only — the live backend refuses this)
+  async function deleteAllUnified() {
+    const client = getClient();
+    if (client) throw new Error('Bulk wipe is disabled against the live backend');
+    const before = getDemoSightings().length;
+    saveDemoSightings([]);
+    return { deleted: before };
+  }
+
   // Unified API that falls back to demo mode
   async function createSightingUnified(sighting) {
     const client = getClient();
@@ -414,7 +476,11 @@ const StoreModule = (function() {
     getSightingsUnified,
     getSightingUnified,
     updateSightingUnified,
-    updateSightingStatusUnified
+    updateSightingStatusUnified,
+    // Deletion
+    deleteSightingUnified,
+    deleteManyUnified,
+    deleteAllUnified
   };
 })();
 

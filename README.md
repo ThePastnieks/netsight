@@ -1,263 +1,172 @@
-# NetSight - Fishing Gear Reporting Prototype
+# NetSight
 
-A mobile-friendly web application for reporting and tracking lost/abandoned fishing gear. Built as a prototype with demo mode for offline presentations.
-
-## Features
-
-- **Photo upload** with camera/gallery, GPS/EXIF/manual location capture
-- **AI detection** of fishing gear (buoys, floats, nets, traps) via Roboflow or Claude Vision API
-- **Live map** with status-colored pins (OpenStreetMap + Leaflet)
-- **Registry matching** - auto-matches sightings to registered gear within 50m
-- **One-tap reporting** - escalate to authorities with reason
-- **Inspector dashboard** - case table, filters, status transitions
-- **Demo mode** - works offline with stored sample data
-- **Supabase backend** - Postgres, Storage, Realtime, RLS
-
-## Quick Start
-
-### Prerequisites
-
-- Node.js 18+
-- Supabase account (for live backend)
-- Netlify account (for deployment) or any static host
-
-### Local Development
+Mobile-first web app for reporting lost or abandoned fishing gear on Riga's
+waterways. A photo goes to a trained model; the model answers whether there is a
+fishing net in the water. A PIN-gated admin panel manages the stored points.
 
 ```bash
-# Clone and enter directory
-cd netsight
-
-# Install dependencies (for Netlify functions)
-cd netlify/functions && npm init -y && npm install && cd ../..
-
-# Start local dev server (any static server)
-npx serve .
-# or
-python -m http.server 8000
-# or
-php -S localhost:8000
+cd C:\claudepro2\netsight
+python -m http.server 8000     # or: npx serve .
 ```
 
-Open `http://localhost:8000` for the boater app, or `http://localhost:8000/inspector.html` for the inspector dashboard.
+| Page | URL |
+|---|---|
+| Boater app | http://localhost:8000/ |
+| Inspector dashboard | http://localhost:8000/inspector.html |
+| Admin panel | http://localhost:8000/admin.html |
+| Cache reset | http://localhost:8000/reset.html |
 
-### Demo Mode (No Backend Required)
+> The build number lives in `js/config.js → NETSIGHT_BUILD`. Bump it on every
+> release — the HTML pages append `?v=<build>` to every local asset and purge
+> stale service workers, so the browser always loads the new files.
 
-The app runs in **demo mode by default** - no Supabase or API keys needed. It uses:
-- Stored sample sightings (`data/demo-sightings.json`)
-- Stored sample registry (`data/registry.csv`)
-- Simulated AI detection results (`js/config.js`)
+---
 
-Perfect for offline presentations and testing.
+## What is in the box
 
-## Live Backend Setup
+* **Map** — Leaflet + OpenStreetMap, colour-coded pins, six filters, live
+  counters, registry overlay with 50 m match zones.
+* **Report flow** — photo → model verdict → gear type → GPS or map-pinned
+  location → note → save, with automatic registry matching.
+* **Pick on map** — a full-height sheet with a draggable pin for placing a
+  sighting by hand.
+* **Detection** — one HTTP contract. The app posts a photo, the model answers
+  `fishing_net: true|false`. Bounding boxes are drawn over the photo when the
+  model supplies them. See [DETECT.md](DETECT.md).
+* **Inspector dashboard** — sortable/filterable case table, detail sheet, status
+  transitions with a mandatory comment for `resolved` / `false_alarm`.
+* **Admin panel** — PIN-gated. Delete single points, bulk delete, export JSON,
+  wipe, set the model endpoint, change the PIN.
+* **Modern shell** — light/dark/system theme, glass app bar, bottom tab bar,
+  bottom sheets, toasts, PWA install + offline.
 
-### 1. Supabase Project
+---
 
-1. Create a new Supabase project
-2. Run the SQL migrations in `supabase/migrations/` (see below)
-3. Enable Realtime on the `sightings` table
-4. Create storage bucket `sightings-photos` (public)
-5. Copy your Project URL and Anon Key
+## Detection — where the model plugs in
 
-### 2. Configure Environment
-
-Create `.env` in project root:
-```env
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=your-anon-key
-```
-
-Update `js/config.js`:
-```js
-SUPABASE_URL: 'https://your-project.supabase.co',
-SUPABASE_ANON_KEY: 'your-anon-key',
-DEMO_MODE: false
-```
-
-### 3. Detection API (Optional)
-
-For live AI detection, configure **one** of:
-
-**Roboflow** (recommended - faster, cheaper):
-```env
-ROBOFLOW_API_URL=https://detect.roboflow.com
-ROBOFLOW_MODEL_ID=fishing-gear/1
-ROBOFLOW_API_KEY=your-roboflow-key
-```
-
-**Claude Vision API**:
-```env
-CLAUDE_API_KEY=your-claude-api-key
-```
-
-Deploy the Netlify function at `netlify/functions/detect.js` with these env vars.
-
-## Database Schema
-
-Run in Supabase SQL Editor:
-
-```sql
--- Enable UUID extension
-CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
-
--- Sightings table
-CREATE TABLE sightings (
-  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
-  created_at TIMESTAMPTZ DEFAULT NOW(),
-  updated_at TIMESTAMPTZ DEFAULT NOW(),
-  photo_url TEXT,
-  lat DOUBLE PRECISION NOT NULL,
-  lon DOUBLE PRECISION NOT NULL,
-  accuracy_m INTEGER,
-  detected_class TEXT NOT NULL CHECK (detected_class IN ('buoy','float','net','trap','none','unknown')),
-  confidence DOUBLE PRECISION NOT NULL CHECK (confidence >= 0 AND confidence <= 1),
-  user_class TEXT NOT NULL CHECK (user_class IN ('buoy','float','net','trap','unknown')),
-  registry_id TEXT,
-  registry_match BOOLEAN DEFAULT FALSE,
-  status TEXT NOT NULL DEFAULT 'new' CHECK (status IN ('new','reported','checked','resolved','false_alarm')),
-  report_reason TEXT CHECK (report_reason IN ('unmarked','abandoned','hazard','possibly_illegal','other')),
-  inspector_id TEXT,
-  note TEXT DEFAULT ''
-);
-
--- Indexes
-CREATE INDEX idx_sightings_status ON sightings(status);
-CREATE INDEX idx_sightings_created ON sightings(created_at DESC);
-CREATE INDEX idx_sightings_location ON sightings(lat, lon);
-
--- Enable Realtime
-ALTER PUBLICATION supabase_realtime ADD TABLE sightings;
-
--- RLS Policies
-ALTER TABLE sightings ENABLE ROW LEVEL SECURITY;
-
--- Public read access
-CREATE POLICY "Public read" ON sightings FOR SELECT USING (true);
-
--- Authenticated insert (boaters)
-CREATE POLICY "Authenticated insert" ON sightings FOR INSERT WITH CHECK (auth.role() = 'authenticated');
-
--- Inspector updates (service role or custom claim)
-CREATE POLICY "Inspector update" ON sightings FOR UPDATE USING (
-  auth.jwt() ->> 'role' = 'inspector' OR auth.role() = 'service_role'
-);
-
--- Storage bucket
-INSERT INTO storage.buckets (id, name, public) VALUES ('sightings-photos', 'sightings-photos', true);
-
--- Storage policies
-CREATE POLICY "Public read photos" ON storage.objects FOR SELECT USING (bucket_id = 'sightings-photos');
-CREATE POLICY "Authenticated upload photos" ON storage.objects FOR INSERT WITH CHECK (bucket_id = 'sightings-photos' AND auth.role() = 'authenticated');
-```
-
-## Deployment
-
-### Netlify (Recommended)
-
-1. Push to GitHub
-2. Connect repo to Netlify
-3. Build settings:
-   - Build command: (empty - static site)
-   - Publish directory: `netsight` (or root)
-   - Functions directory: `netlify/functions`
-4. Add environment variables in Netlify dashboard
-5. Deploy
-
-### Vercel
-
-```bash
-npm i -g vercel
-vercel --prod
-```
-
-Configure `vercel.json` for SPA routing and functions.
-
-### Static Hosting (GitHub Pages, Cloudflare Pages, etc.)
-
-For demo mode only - just upload the `netsight` folder. No functions or backend needed.
-
-## Project Structure
+There is no prompt, no API key and no provider list in the app. There is one
+endpoint.
 
 ```
-netsight/
-├── index.html              # Boater app (map + report)
-├── inspector.html          # Inspector dashboard
-├── css/
-│   └── style.css           # Full design system
-├── js/
-│   ├── config.js           # Configuration & demo data
-│   ├── location.js         # GPS/EXIF/manual location
-│   ├── registry.js         # CSV registry + Haversine matching
-│   ├── status.js           # Status machine + pin colors
-│   ├── map.js              # Leaflet map + pins + filters
-│   ├── ui.js               # Forms, modals, toasts, screens
-│   ├── detect.js           # Detection API client
-│   ├── store.js            # Supabase CRUD + demo fallback
-│   ├── app.js              # Main app coordinator
-│   └── inspector.js        # Inspector dashboard logic
-├── data/
-│   ├── registry.csv        # Sample registry (10 items near Riga)
-│   └── demo-sightings.json # Sample sightings (5, all statuses)
-├── netlify/
-│   └── functions/
-│       └── detect.js       # Serverless detection proxy
-├── supabase/
-│   └── migrations/         # SQL schema (see above)
-└── assets/
-    └── netsight-logo.svg   # Logo
+photo ──▶ POST { "image": "<base64>" } ──▶ your model ──▶ { "fishing_net": true, … }
 ```
 
-## Status Machine
+**Default endpoint:** `/.netlify/functions/detect`
+**Change it:** Admin → AI → Model endpoint.
+
+### The reply the app expects
+
+```json
+{
+  "fishing_net": true,
+  "confidence": 0.93,
+  "class": "net",
+  "objects": [{ "class": "net", "confidence": 0.93, "box": [0.1, 0.2, 0.5, 0.3] }],
+  "model": "netsight-net-v1"
+}
+```
+
+Only `fishing_net` and `confidence` are required. `box` is
+`[x, y, width, height]` normalised to 0–1 and draws the rectangle over the photo.
+
+The client tolerates naming variations (`detected`, `score`, `detections`,
+`bbox`, `label`, …) and maps loose class names onto `net` / `buoy` / `float` /
+`trap` / `none`. Full rules, error handling and worked examples:
+**[DETECT.md](DETECT.md)**.
+
+### What the user sees
+
+| Model says | UI |
+|---|---|
+| `fishing_net: true`, confident | **"Fishing net detected"** — type `Net` preselected |
+| `fishing_net: true`, below threshold | Same verdict, but asks the user to confirm the type |
+| `fishing_net: false` | **"No fishing gear found"** — nothing preselected |
+| Endpoint down / bad reply | Toast with the reason — no verdict card |
+
+### Wiring a model in
+
+`netlify/functions/detect.js` ships with a stub. Replace `runModel()` with a call
+to a hosted detector, in-function inference, or your own GPU box. The function's
+return value is the only thing the app cares about. Keep secrets in Netlify
+environment variables, never in `js/`.
+
+Test it from **Admin → AI → Test endpoint** — it posts a 1×1 PNG and reports
+either the round-trip time and model name, or exactly what went wrong.
+
+---
+
+## Admin panel
+
+`admin.html` — PIN gated. First visit asks you to create one (`2468` is the
+documented default if you skip it). Stored as a SHA-256 hash in this browser
+only; the session ends when the tab closes.
+
+| Tab | What it does |
+|---|---|
+| **Points** | Every sighting with thumbnail, status, type, confidence, coordinates and age. Filter, sort, delete one, bulk delete, export JSON, delete all. |
+| **AI** | Model endpoint, confidence threshold, connection test, and the reply contract. |
+| **Security** | Change PIN, lock the panel. |
+
+Deletion is immediate and permanent.
+
+---
+
+## Project layout
 
 ```
-new → reported → checked → resolved
-         ↘                    ↗
-           → false_alarm → checked (reopen)
+index.html                 Boater app (map, report, settings)
+inspector.html             Inspector dashboard
+admin.html                 Admin panel (PIN, points, detection, security)
+reset.html                 One-click cache + service worker purge
+DETECT.md                  The model contract — read this to build the AI
+manifest.webmanifest       PWA metadata
+sw.js                      Offline app-shell service worker
+css/style.css              Design system (tokens → base → components)
+js/
+  config.js                Build stamp, detection endpoint, map, thresholds
+  theme.js                 system / light / dark, persisted
+  status.js                Statuses, transitions, colours, validation
+  location.js              Geolocation watch, manual point, Haversine
+  registry.js              registry.csv parsing + matching
+  map.js                   Leaflet map, pins, filters, location picker
+  ui.js                    Screens, sheets, toasts, verdict card, detail view
+  detection.js             Sends the photo, normalises the model's reply
+  store.js                 Supabase CRUD with localStorage fallback
+  inspector.js             Inspector table logic
+  admin.js                 PIN gate, point deletion, detection config
+  app.js                   Wiring and user flows
+netlify/functions/detect.js The seam: replace runModel() with your model
+data/registry.csv          Registered gear
+supabase/migrations/       Postgres schema for the live backend
 ```
 
-Pin colors:
-- 🟢 Green - Registered gear
-- 🟠 Orange - Unverified (new, no registry match)
-- 🔴 Red - Reported
-- 🔵 Blue - Checked by inspector
-- ⚫ Grey - Resolved / False alarm
+Load order: `config → theme → status → location → registry → map → ui →
+detection → store → app`.
 
-## Registry Matching
+---
 
-- **Radius**: 50 meters (Haversine formula)
-- **Type compatibility**:
-  - Buoy matches all types (marks any gear)
-  - Float matches net or buoy
-  - Net matches net
-  - Trap matches trap
+## Keyboard shortcuts
 
-## Demo Data
+| Key | Action |
+|---|---|
+| `R` | New report |
+| `Esc` | Back to map |
 
-The prototype includes sample data near Riga, Latvia (56.95, 24.11):
-- 10 registry items (buoys, nets, traps, floats)
-- 5 sightings covering all statuses
+---
 
-## Browser Support
+## Live backend (Supabase)
 
-- Chrome/Edge 90+
-- Firefox 88+
-- Safari 14+
-- Mobile Safari/Chrome
+1. Create a project, run `supabase/migrations/001_initial_schema.sql`.
+2. Create a public storage bucket `sightings-photos`.
+3. Put `SUPABASE_URL` / `SUPABASE_ANON_KEY` into `js/config.js`.
 
-Requires: ES2020, Geolocation API, FileReader, fetch, CSS Grid/Flexbox
+Without a backend the app keeps its sightings in `localStorage` — nothing breaks.
 
-## Configuration
+## Browser support
 
-Key settings in `js/config.js`:
-```js
-DEMO_MODE: true,                    // Use stored data
-CONF_THRESHOLD: 0.35,               // Min confidence for auto-type-select
-MAX_PHOTO_MB: 5,                    // Max upload size
-DETECT_API_ENDPOINT: '/.netlify/functions/detect',
-SUPABASE_URL: '',                   // Your Supabase URL
-SUPABASE_ANON_KEY: '',              // Your Supabase anon key
-```
+Chrome/Edge 90+, Firefox 88+, Safari 14+. Requires ES2020, Geolocation,
+FileReader, fetch, `color-mix()` (graceful fallback), CSS Grid.
 
 ## License
 
-MIT - Prototype for demonstration purposes.
+MIT — prototype for demonstration purposes.

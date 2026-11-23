@@ -1,0 +1,309 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0B2A4A">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>NetSight — Admin</title>
+
+  <script>
+  (function () {
+    var BUILD = '2026.11.24.2';
+    var KEY = 'netsight_build';
+    var seen = null;
+    try { seen = localStorage.getItem(KEY); } catch (e) {}
+    if (seen === BUILD) return;
+    try { localStorage.setItem(KEY, BUILD); } catch (e) {}
+    var tasks = [];
+    if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
+      tasks.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+        return Promise.all(regs.map(function (r) { return r.unregister(); }));
+      }).catch(function () {}));
+    }
+    if (window.caches && caches.keys) {
+      tasks.push(caches.keys().then(function (keys) {
+        return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+      }).catch(function () {}));
+    }
+    if (seen) { Promise.all(tasks).then(function () { location.reload(); }); }
+  })();
+  </script>
+
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/netsight-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.24.2">
+
+  <script src="js/config.js?v=2026.11.24.2"></script>
+  <script src="js/theme.js?v=2026.11.24.2"></script>
+</head>
+<body data-page="admin">
+
+  <div id="loading-overlay" class="loading-overlay" hidden>
+    <div class="loading-overlay__card">
+      <div class="spinner"></div>
+      <p id="loading-message">Working…</p>
+    </div>
+  </div>
+
+  <div id="modal-overlay" class="modal-overlay" hidden></div>
+  <div id="toast-container" class="toast-container"></div>
+
+  <!-- ==================== LOCK ==================== -->
+  <div id="lock" class="lock">
+    <form class="lock__card" id="lock-form" autocomplete="off">
+      <img class="lock__logo" src="assets/netsight-logo.svg" alt="" width="42" height="42">
+      <h1 class="lock__title">Admin</h1>
+      <p class="lock__sub" id="lock-sub">Enter your PIN</p>
+
+      <input class="input input--pin" id="lock-pin" type="password" inputmode="numeric"
+             autocomplete="off" placeholder="••••" aria-label="PIN">
+
+      <input class="input" id="lock-pin2" type="password" inputmode="numeric"
+             autocomplete="off" placeholder="Repeat PIN" aria-label="Repeat PIN" hidden>
+
+      <p class="lock__error" id="lock-error" hidden></p>
+
+      <button type="submit" class="btn btn--primary btn--lg btn--block" id="lock-submit">
+        Unlock
+      </button>
+      <a class="link lock__back" href="index.html">← Back to app</a>
+    </form>
+  </div>
+
+  <!-- ==================== PANEL ==================== -->
+  <div class="screen" id="panel" hidden>
+    <header class="app-bar">
+      <div class="app-bar__left">
+        <img class="app-bar__logo" src="assets/netsight-logo.svg" alt="" width="26" height="26">
+        <div class="app-bar__titles">
+          <h1 class="app-bar__title">Admin</h1>
+          <span class="app-bar__sub" id="admin-sub">—</span>
+        </div>
+      </div>
+      <div class="app-bar__right">
+        <button type="button" class="icon-btn" data-theme-toggle aria-label="Theme">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
+          </svg>
+        </button>
+        <button type="button" class="icon-btn" id="btn-lock" aria-label="Lock" title="Lock">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <rect x="3" y="11" width="18" height="11" rx="2"></rect>
+            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <div class="admin-tabs segmented segmented--full" role="tablist">
+      <button type="button" class="segment is-active" data-tab="points" role="tab">Points</button>
+      <button type="button" class="segment" data-tab="ai" role="tab">AI</button>
+      <button type="button" class="segment" data-tab="security" role="tab">Security</button>
+    </div>
+
+    <div class="screen__body">
+
+      <!-- ---------------- POINTS ---------------- -->
+      <section class="admin-pane is-active" data-pane="points">
+        <div class="stats">
+          <div class="stat"><span class="stat__value" id="s-total">0</span><span class="stat__label">Total</span></div>
+          <div class="stat stat--warn"><span class="stat__value" id="s-unverified">0</span><span class="stat__label">Unverified</span></div>
+          <div class="stat stat--danger"><span class="stat__value" id="s-reported">0</span><span class="stat__label">Reported</span></div>
+          <div class="stat stat--ok"><span class="stat__value" id="s-resolved">0</span><span class="stat__label">Resolved</span></div>
+        </div>
+
+        <div class="card">
+          <header class="card__head">
+            <h2 class="card__title">Sightings</h2>
+            <span class="tag" id="sel-count" hidden>0 selected</span>
+          </header>
+
+          <div class="card__body">
+            <div class="row row--2">
+              <label class="select-wrapper">
+                <span class="visually-hidden">Filter by status</span>
+                <select id="admin-filter" class="input">
+                  <option value="all">All statuses</option>
+                  <option value="new">New</option>
+                  <option value="reported">Reported</option>
+                  <option value="checked">Checked</option>
+                  <option value="resolved">Resolved</option>
+                  <option value="false_alarm">False alarm</option>
+                </select>
+              </label>
+              <label class="select-wrapper">
+                <span class="visually-hidden">Sort</span>
+                <select id="admin-sort" class="input">
+                  <option value="created_desc">Newest first</option>
+                  <option value="created_asc">Oldest first</option>
+                </select>
+              </label>
+            </div>
+
+            <div class="row row--2">
+              <button type="button" class="btn btn--ghost" id="btn-select-all">Select all</button>
+              <button type="button" class="btn btn--danger" id="btn-delete-selected" disabled>
+                Delete selected
+              </button>
+            </div>
+          </div>
+        </div>
+
+        <div id="points-list" class="points"></div>
+
+        <div id="points-empty" class="empty-state" hidden>
+          <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <circle cx="12" cy="12" r="9"></circle>
+            <path d="M8 12h8"></path>
+          </svg>
+          <p>No sightings stored</p>
+          <p class="empty-state__hint">Report one from the app, then come back.</p>
+        </div>
+
+        <div class="card card--danger-zone">
+          <header class="card__head">
+            <h2 class="card__title">Danger zone</h2>
+          </header>
+          <div class="card__body">
+            <div class="row row--2">
+              <button type="button" class="btn btn--ghost" id="btn-export">Export JSON</button>
+              <button type="button" class="btn btn--danger" id="btn-wipe">Delete all</button>
+            </div>
+            <p class="hint">Export downloads every sighting as a JSON file.</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ---------------- AI ---------------- -->
+      <section class="admin-pane" data-pane="ai">
+
+        <div class="card">
+          <header class="card__head">
+            <h2 class="card__title">Model endpoint</h2>
+            <span class="tag" id="ai-ready">not set</span>
+          </header>
+          <div class="card__body stack-sm">
+            <label class="field">
+              <span class="field__label">Where the app sends photos</span>
+              <input class="input" id="detect-endpoint" type="text"
+                     placeholder="/.netlify/functions/detect"
+                     spellcheck="false" autocomplete="off">
+            </label>
+
+            <div class="row row--2">
+              <button type="button" class="btn btn--soft" id="btn-detect-test">Test endpoint</button>
+              <button type="button" class="btn btn--ghost" id="btn-detect-reset">Reset</button>
+            </div>
+
+            <p class="note" id="ai-hint" data-tone="muted"></p>
+          </div>
+        </div>
+
+        <div class="card">
+          <header class="card__head">
+            <h2 class="card__title">Confidence</h2>
+          </header>
+          <div class="card__body">
+            <label class="field">
+              <span class="field__label">Threshold · <b id="thr-val">50%</b></span>
+              <input id="ai-threshold" class="range" type="range" min="20" max="95" step="5" value="50">
+            </label>
+            <p class="hint">
+              Below this the verdict is shown but the user must confirm the gear
+              type before saving. Above it the type is preselected.
+            </p>
+          </div>
+        </div>
+
+        <div class="card">
+          <header class="card__head">
+            <h2 class="card__title">What the app expects back</h2>
+          </header>
+          <div class="card__body stack-sm">
+            <p class="hint">
+              POST <code class="monospace">{ "image": "&lt;base64&gt;" }</code> and answer with:
+            </p>
+            <pre class="code-block">{
+  "fishing_net": true,
+  "confidence": 0.93,
+  "class": "net",
+  "objects": [
+    { "class": "net", "confidence": 0.93,
+      "box": [0.1, 0.2, 0.5, 0.3] }
+  ],
+  "model": "netsight-net-v1"
+}</pre>
+            <p class="hint">
+              Only <code class="monospace">fishing_net</code> and
+              <code class="monospace">confidence</code> are required.
+              <code class="monospace">box</code> is
+              [x, y, width, height] in 0–1 image coordinates — that draws the
+              rectangle over the photo.
+            </p>
+            <p class="hint">
+              Full contract: <a class="link" href="DETECT.md">DETECT.md</a> ·
+              stub: <code class="monospace">netlify/functions/detect.js</code>
+            </p>
+          </div>
+        </div>
+
+      </section>
+      <!-- ---------------- SECURITY ---------------- -->
+      <section class="admin-pane" data-pane="security">
+        <div class="card">
+          <header class="card__head">
+            <h2 class="card__title">Change PIN</h2>
+          </header>
+          <div class="card__body stack-sm">
+            <label class="field">
+              <span class="field__label">Current PIN</span>
+              <input class="input" id="pin-old" type="password" inputmode="numeric" autocomplete="off">
+            </label>
+            <label class="field">
+              <span class="field__label">New PIN (min 4 digits)</span>
+              <input class="input" id="pin-new" type="password" inputmode="numeric" autocomplete="off">
+            </label>
+            <label class="field">
+              <span class="field__label">Repeat new PIN</span>
+              <input class="input" id="pin-new2" type="password" inputmode="numeric" autocomplete="off">
+            </label>
+            <button type="button" class="btn btn--primary btn--block" id="btn-change-pin">Save PIN</button>
+            <p class="note" id="pin-status" data-tone="muted"></p>
+          </div>
+        </div>
+
+        <div class="card">
+          <header class="card__head">
+            <h2 class="card__title">Session</h2>
+          </header>
+          <div class="card__body">
+            <button type="button" class="btn btn--soft btn--block" id="btn-lock-2">Lock now</button>
+            <p class="hint">
+              The panel locks when this tab closes. The PIN is stored as a
+              SHA-256 hash in this browser only.
+            </p>
+          </div>
+        </div>
+      </section>
+
+    </div>
+  </div>
+
+  <script src="js/status.js?v=2026.11.24.2"></script>
+  <script src="js/store.js?v=2026.11.24.2"></script>
+  <script src="js/ui.js?v=2026.11.24.2"></script>
+  <script src="js/detection.js?v=2026.11.24.2"></script>
+  <script src="js/admin.js?v=2026.11.24.2"></script>
+</body>
+</html>
+
+
+
+
+
+
+

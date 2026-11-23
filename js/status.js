@@ -1,20 +1,10 @@
 // NetSight Status Module
-// Handles status model, transitions, pin colors, and history
+// Status labels, transitions, colours and validation
 
 const StatusModule = (function() {
   'use strict';
 
-  // Status transition rules
-  const ALLOWED_TRANSITIONS = {
-    new: ['reported', 'checked'],
-    reported: ['checked'],
-    checked: ['resolved', 'false_alarm'],
-    resolved: ['checked'],
-    false_alarm: ['checked']
-  };
-
-  // Status display labels
-  const STATUS_LABELS = {
+  const LABELS = {
     new: 'New',
     reported: 'Reported',
     checked: 'Checked',
@@ -22,7 +12,8 @@ const StatusModule = (function() {
     false_alarm: 'False Alarm'
   };
 
-  // Report reason labels
+  const REASONS = ['unmarked', 'abandoned', 'hazard', 'possibly_illegal', 'other'];
+
   const REASON_LABELS = {
     unmarked: 'Unmarked gear',
     abandoned: 'Abandoned gear',
@@ -31,130 +22,145 @@ const StatusModule = (function() {
     other: 'Other'
   };
 
-  // Check if transition is allowed
-  function canTransition(from, to) {
-    return (ALLOWED_TRANSITIONS[from] || []).includes(to);
-  }
-
-  // Get allowed next statuses
-  function getAllowedTransitions(from) {
-    return ALLOWED_TRANSITIONS[from] || [];
-  }
-
-  // Get status label
-  function getStatusLabel(status) {
-    return STATUS_LABELS[status] || status;
-  }
-
-  // Get reason label
-  function getReasonLabel(reason) {
-    return REASON_LABELS[reason] || reason;
-  }
-
-  // Pin color function
-  function pinColor(sighting) {
-    const status = sighting.status;
-    const registryMatch = sighting.registry_match;
-
-    if (status === 'resolved' || status === 'false_alarm') return 'grey';
-    if (status === 'checked') return 'blue';
-    if (status === 'reported') return 'red';
-    if (registryMatch) return 'green';
-    return 'orange'; // new and unverified
-  }
-
-  // Pin color from status and registry_match directly
-  function pinColorFromValues(status, registryMatch) {
-    if (status === 'resolved' || status === 'false_alarm') return 'grey';
-    if (status === 'checked') return 'blue';
-    if (status === 'reported') return 'red';
-    if (registryMatch) return 'green';
-    return 'orange';
-  }
-
-  // Status color mapping
-  const STATUS_COLORS = {
-    new: 'orange',
-    reported: 'red',
-    checked: 'blue',
-    resolved: 'grey',
-    false_alarm: 'grey'
+  // Allowed forward transitions per status
+  const TRANSITIONS = {
+    new: ['reported', 'checked'],
+    reported: ['checked'],
+    checked: ['resolved', 'false_alarm'],
+    resolved: [],
+    false_alarm: []
   };
 
-  function statusColor(status) {
-    return STATUS_COLORS[status] || 'grey';
+  // Priority used by the inspector table sorting
+  const PRIORITY = {
+    reported: 5,
+    new: 4,
+    checked: 3,
+    resolved: 1,
+    false_alarm: 0
+  };
+
+  function getStatusLabel(status) {
+    return LABELS[status] || status || 'Unknown';
   }
 
-  // Validate sighting object
-  function validateSighting(sighting) {
+  function getReasonLabel(reason) {
+    return REASON_LABELS[reason] || reason || '';
+  }
+
+  function getAllowedTransitions(status) {
+    return TRANSITIONS[status] || [];
+  }
+
+  function isTerminal(status) {
+    return getAllowedTransitions(status).length === 0;
+  }
+
+  function getStatusPriority(status) {
+    return PRIORITY[status] || 0;
+  }
+
+  // Colour key for a status badge
+  function statusColor(status) {
+    switch (status) {
+      case 'reported': return 'red';
+      case 'new': return 'orange';
+      case 'checked': return 'blue';
+      case 'resolved': return 'green';
+      case 'false_alarm': return 'grey';
+      default: return 'grey';
+    }
+  }
+
+  // Colour key for a map pin - unverified sightings always stand out
+  function pinColor(sighting) {
+    if (!sighting) return 'grey';
+    if (sighting.status === 'resolved' || sighting.status === 'false_alarm') {
+      return statusColor(sighting.status);
+    }
+    if (!sighting.registry_match) return 'orange';
+    return statusColor(sighting.status);
+  }
+
+  function getStatusHex(status) {
+    return (CONFIG.COLORS && CONFIG.COLORS[statusColor(status)]) || '#7D8C99';
+  }
+
+  function isGearClass(cls) {
+    return CONFIG.GEAR_CLASSES.includes(cls);
+  }
+
+  function isStatus(status) {
+    return CONFIG.STATUSES.includes(status);
+  }
+
+  // Validate and normalise a sighting before it is stored
+  function validateSighting(data) {
     const errors = [];
 
-    if (!sighting.lat || !sighting.lon) {
-      errors.push('Missing coordinates');
+    if (!data || typeof data !== 'object') {
+      return { valid: false, errors: ['Sighting data missing'] };
     }
 
-    if (!sighting.user_class || !['buoy', 'float', 'net', 'trap', 'unknown'].includes(sighting.user_class)) {
-      errors.push('Invalid user_class');
-    }
+    const lat = Number(data.lat);
+    const lon = Number(data.lon);
+    if (!Number.isFinite(lat) || lat < -90 || lat > 90) errors.push('Invalid latitude');
+    if (!Number.isFinite(lon) || lon < -180 || lon > 180) errors.push('Invalid longitude');
 
-    if (typeof sighting.confidence !== 'number' || sighting.confidence < 0 || sighting.confidence > 1) {
+    if (!isGearClass(data.user_class)) errors.push('Invalid gear type');
+
+    const confidence = Number(data.confidence);
+    if (!Number.isFinite(confidence) || confidence < 0 || confidence > 1) {
       errors.push('Invalid confidence');
     }
 
-    if (!['new', 'reported', 'checked', 'resolved', 'false_alarm'].includes(sighting.status)) {
-      errors.push('Invalid status');
+    if (data.status && !isStatus(data.status)) errors.push('Invalid status');
+
+    if (data.report_reason && !REASONS.includes(data.report_reason)) {
+      errors.push('Invalid report reason');
     }
 
-    return errors;
-  }
-
-  // Create initial sighting object
-  function createSighting(data) {
-    const now = new Date().toISOString();
     return {
-      id: crypto.randomUUID ? crypto.randomUUID() : generateId(),
-      created_at: now,
-      photo_url: data.photo_url || '',
-      lat: data.lat,
-      lon: data.lon,
-      accuracy_m: data.accuracy_m || null,
-      detected_class: data.detected_class || 'unknown',
-      confidence: data.confidence || 0,
-      user_class: data.user_class || 'unknown',
-      registry_id: data.registry_id || null,
-      registry_match: data.registry_match || false,
-      status: 'new',
-      report_reason: data.report_reason || null,
-      note: data.note || ''
+      valid: errors.length === 0,
+      errors,
+      normalized: {
+        photo_url: data.photo_url || '',
+        lat,
+        lon,
+        accuracy_m: data.accuracy_m == null ? null : Math.round(Number(data.accuracy_m)),
+        detected_class: isGearClass(data.detected_class) || data.detected_class === 'none'
+          ? data.detected_class
+          : 'unknown',
+        confidence: Number.isFinite(confidence) ? confidence : 0,
+        user_class: data.user_class,
+        registry_id: data.registry_id || null,
+        registry_match: !!data.registry_match,
+        status: isStatus(data.status) ? data.status : 'new',
+        report_reason: data.report_reason || null,
+        note: (data.note || '').slice(0, 500)
+      }
     };
   }
 
-  // Generate a simple UUID fallback
-  function generateId() {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, c => {
-      const r = Math.random() * 16 | 0;
-      const v = c === 'x' ? r : (r & 0x3 | 0x8);
-      return v.toString(16);
-    });
-  }
-
-  // Public API
   return {
-    canTransition,
-    getAllowedTransitions,
+    LABELS,
+    REASONS,
+    REASON_LABELS,
+    TRANSITIONS,
     getStatusLabel,
     getReasonLabel,
-    pinColor,
-    pinColorFromValues,
+    getAllowedTransitions,
+    getStatusPriority,
+    isTerminal,
     statusColor,
-    validateSighting,
-    createSighting,
-    STATUSES: Object.keys(STATUS_LABELS),
-    REASONS: Object.keys(REASON_LABELS)
+    pinColor,
+    getStatusHex,
+    isGearClass,
+    isStatus,
+    validateSighting
   };
 })();
 
-// Export
 if (typeof module !== 'undefined' && module.exports) {
   module.exports = StatusModule;
 } else {

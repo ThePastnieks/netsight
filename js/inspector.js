@@ -52,10 +52,13 @@ const InspectorModule = (function() {
     // Filter chips
     document.querySelectorAll('.filter-chip[data-filter]').forEach(chip => {
       chip.addEventListener('click', () => {
-        document.querySelectorAll('.filter-chip[data-filter]').forEach(c => c.classList.remove('filter-chip--active'));
-        chip.classList.add('filter-chip--active');
+        document.querySelectorAll('.filter-chip[data-filter]').forEach(c => {
+          c.classList.remove('filter-chip--active', 'is-active');
+        });
+        chip.classList.add('filter-chip--active', 'is-active');
         currentFilter = chip.dataset.filter;
         applyFilterAndSort();
+        updateCaseCount();
       });
     });
 
@@ -261,9 +264,9 @@ const InspectorModule = (function() {
 document.addEventListener('DOMContentLoaded', () => {
   const urlParams = new URLSearchParams(window.location.search);
   const isInInspectorMode = urlParams.get('inspector') === 'true';
-  if (!isInInspectorMode) {
-    // Not in inspector mode - do nothing
-    return;
+  const isInspectorPage = document.body.dataset.page === 'inspector';
+
+  if (isInInspectorMode || isInspectorPage) {
+    InspectorModule.init();
   }
-  InspectorModule.init();
 });

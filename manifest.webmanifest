@@ -1,0 +1,39 @@
+{
+  "name": "NetSight — Fishing Gear Reporting",
+  "short_name": "NetSight",
+  "description": "Report and track lost or abandoned fishing gear on Riga's waterways.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#06111C",
+  "theme_color": "#0B2A4A",
+  "lang": "en",
+  "categories": ["productivity", "utilities"],
+  "icons": [
+    {
+      "src": "assets/netsight-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    },
+    {
+      "src": "assets/netsight-logo.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "maskable"
+    }
+  ],
+  "shortcuts": [
+    {
+      "name": "Report a sighting",
+      "short_name": "Report",
+      "url": "./index.html?screen=report"
+    },
+    {
+      "name": "Inspector dashboard",
+      "short_name": "Inspector",
+      "url": "./inspector.html"
+    }
+  ]
+}
