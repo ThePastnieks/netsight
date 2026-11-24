@@ -1,8 +1,8 @@
-{
+﻿{
   "name": "NetSight — Fishing Gear Reporting",
   "short_name": "NetSight",
   "description": "Report and track lost or abandoned fishing gear on Riga's waterways.",
-  "start_url": "./index.html",
+  "start_url": "./login.html",
   "scope": "./",
   "display": "standalone",
   "orientation": "portrait",
@@ -31,9 +31,10 @@
       "url": "./index.html?screen=report"
     },
     {
-      "name": "Inspector dashboard",
-      "short_name": "Inspector",
-      "url": "./inspector.html"
+      "name": "Water Patrol",
+      "short_name": "Patrol",
+      "url": "./patrol.html"
     }
   ]
 }
+

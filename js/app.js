@@ -13,7 +13,12 @@ const App = (function() {
   // ------------------------------------------------------------------ init
 
   async function init() {
+    // Every page sits behind the same login. This one is the boater's home.
+    const session = Auth.require(['boater', 'patrol', 'admin']);
+    if (!session) return;
+
     Theme.init();
+    Auth.mount(session);
     Detect.load();
 
     isInspectorMode = new URLSearchParams(window.location.search).get('inspector') === 'true';
@@ -430,6 +435,7 @@ const App = (function() {
 
 document.addEventListener('DOMContentLoaded', () => App.init());
 window.App = App;
+
 
 
 

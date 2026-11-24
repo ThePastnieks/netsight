@@ -14,7 +14,7 @@
        Runs before anything else so the app never boots on mixed assets. -->
   <script>
   (function () {
-    var BUILD = '2026.11.24.2';
+    var BUILD = '2026.11.24.4';
     var KEY = 'netsight_build';
     var seen = null;
     try { seen = localStorage.getItem(KEY); } catch (e) {}
@@ -51,10 +51,10 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="preconnect" href="https://tile.openstreetmap.org">
-  <link rel="stylesheet" href="css/style.css?v=2026.11.24.2">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.24.4">
 
-  <script src="js/config.js?v=2026.11.24.2"></script>
-  <script src="js/theme.js?v=2026.11.24.2"></script>
+  <script src="js/config.js?v=2026.11.24.4"></script>
+  <script src="js/theme.js?v=2026.11.24.4"></script>
 </head>
 <body>
 
@@ -80,14 +80,25 @@
         </div>
       </div>
       <div class="app-bar__right">
+        <span class="role-chip">
+          <span class="role-chip__dot"></span>
+          <span data-role-short>Boater</span>
+        </span>
         <button type="button" class="pill pill--ai" id="ai-pill" data-mode="off"
-                title="AI mode" aria-label="AI mode">
+                title="AI status" aria-label="AI status">
           <span class="pill__dot"></span><span class="pill__text">AI off</span>
         </button>
         <button type="button" class="icon-btn" data-theme-toggle aria-label="Theme">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <circle cx="12" cy="12" r="4"></circle>
             <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
+          </svg>
+        </button>
+        <button type="button" class="icon-btn" data-signout aria-label="Sign out" title="Sign out">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
           </svg>
         </button>
       </div>
@@ -338,11 +349,19 @@
           <h2 class="card__title">About</h2>
         </header>
         <div class="card__body stack-sm">
+          <div class="ai-status-row">
+            <span class="ai-status-row__dot" data-state="ready"></span>
+            <div class="ai-status-row__text">
+              <span class="ai-status-row__title" data-role-label>Boater</span>
+              <span class="ai-status-row__sub">Signed in · reports and map</span>
+            </div>
+          </div>
+          <button type="button" class="btn btn--ghost btn--block" data-signout>Sign out</button>
+
           <p class="hint">
             NetSight prototype · Riga waterways. No personal data is stored; photos carry no identity.
             Detection below the threshold requires manual confirmation.
           </p>
-          <a class="link" href="inspector.html?inspector=true">Open inspector dashboard →</a>
           <a class="link" href="reset.html?manual">Clear cached files (troubleshooting) →</a>
         </div>
       </section>
@@ -391,16 +410,21 @@
   <!-- ============ scripts ============ -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/status.js?v=2026.11.24.2"></script>
-  <script src="js/location.js?v=2026.11.24.2"></script>
-  <script src="js/registry.js?v=2026.11.24.2"></script>
-  <script src="js/map.js?v=2026.11.24.2"></script>
-  <script src="js/ui.js?v=2026.11.24.2"></script>
-  <script src="js/detection.js?v=2026.11.24.2"></script>
-  <script src="js/store.js?v=2026.11.24.2"></script>
-  <script src="js/app.js?v=2026.11.24.2"></script>
+  <script src="js/status.js?v=2026.11.24.4"></script>
+  <script src="js/location.js?v=2026.11.24.4"></script>
+  <script src="js/registry.js?v=2026.11.24.4"></script>
+  <script src="js/map.js?v=2026.11.24.4"></script>
+  <script src="js/ui.js?v=2026.11.24.4"></script>
+  <script src="js/detection.js?v=2026.11.24.4"></script>
+  <script src="js/store.js?v=2026.11.24.4"></script>
+  <script src="js/auth.js?v=2026.11.24.4"></script>
+  <script src="js/app.js?v=2026.11.24.4"></script>
 </body>
 </html>
+
+
+
+
 
 
 

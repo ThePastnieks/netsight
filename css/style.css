@@ -1141,12 +1141,12 @@
     padding: var(--s3);
     background: rgb(3 12 20 / 0.55);
     backdrop-filter: blur(3px);
-    opacity: 0;
-    pointer-events: none;
-    transition: opacity var(--t-base);
+    /* Visibility is driven by the [hidden] attribute, never by an opacity
+       transition — a paused transition must not leave a dialog invisible. */
+    opacity: 1;
   }
 
-  .modal-overlay--visible { opacity: 1; pointer-events: auto; }
+  .modal-overlay--visible { opacity: 1; }
 
   .modal {
     width: 100%;
@@ -1158,12 +1158,10 @@
     border: 1px solid var(--border);
     border-radius: var(--r-xl) var(--r-xl) var(--r-lg) var(--r-lg);
     box-shadow: var(--sh-3);
-    transform: translateY(18px) scale(0.995);
-    transition: transform var(--t-base);
     overflow: hidden;
   }
 
-  .modal-overlay--visible .modal { transform: translateY(0) scale(1); }
+  .modal-overlay--visible .modal { transform: none; }
 
   .modal__header {
     display: flex;
@@ -1210,8 +1208,7 @@
     justify-content: center;
     padding: var(--s3);
     background: rgb(3 12 20 / 0.6);
-    opacity: 0;
-    transition: opacity var(--t-base);
+    opacity: 1;
   }
 
   .sheet--visible { opacity: 1; }
@@ -1226,11 +1223,9 @@
     border-radius: var(--r-xl) var(--r-xl) var(--r-lg) var(--r-lg);
     overflow: hidden;
     box-shadow: var(--sh-3);
-    transform: translateY(20px);
-    transition: transform var(--t-base);
   }
 
-  .sheet--visible .sheet__panel { transform: translateY(0); }
+  .sheet--visible .sheet__panel { transform: none; }
   .sheet__head { padding: 14px var(--s4); border-bottom: 1px solid var(--border); }
   .sheet__map { flex: 1 1 auto; min-height: 220px; }
   .sheet__actions { padding: 12px var(--s4) var(--s4); }
@@ -1880,3 +1875,258 @@
     font-size: 11px;
   }
 }
+
+/* ===================== LOGIN / ROLES / PATROL ========================== */
+@layer components {
+
+  /* ------------------------------------------------------------ login */
+  .login {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s5);
+    min-height: 100dvh;
+    padding: var(--s5) var(--s4);
+  }
+
+  .login__brand { text-align: center; }
+
+  .login__logo {
+    width: 46px;
+    height: 46px;
+    margin: 0 auto var(--s2);
+    filter: drop-shadow(0 0 14px color-mix(in oklab, var(--brand) 55%, transparent));
+  }
+
+  .login__title { font-size: 26px; letter-spacing: -0.03em; }
+
+  .login__tagline {
+    margin-top: 2px;
+    font-size: 12px;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .login__card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s3);
+    width: 100%;
+    max-width: 420px;
+    padding: var(--s5);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-xl);
+    box-shadow: var(--sh-3);
+  }
+
+  .login__step {
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--muted);
+  }
+
+  .roles { display: flex; flex-direction: column; gap: var(--s2); }
+
+  .role {
+    display: grid;
+    grid-template-columns: 40px 1fr 20px;
+    align-items: center;
+    gap: var(--s3);
+    padding: var(--s3);
+    border: 1.5px solid var(--border);
+    border-radius: var(--r-md);
+    background: var(--surface-2);
+    text-align: left;
+    transition: border-color var(--t-fast), background var(--t-fast), transform var(--t-fast);
+  }
+
+  .role:hover { border-color: var(--border-strong); transform: translateY(-1px); }
+
+  .role.is-selected {
+    border-color: var(--brand);
+    background: color-mix(in oklab, var(--brand) 10%, var(--surface));
+    box-shadow: var(--glow);
+  }
+
+  .role__icon {
+    display: grid;
+    place-items: center;
+    width: 40px;
+    height: 40px;
+    border-radius: var(--r-sm);
+    background: var(--surface-3);
+    color: var(--muted);
+  }
+
+  .role.is-selected .role__icon { background: var(--brand); color: #fff; }
+  .role__icon svg { width: 21px; height: 21px; }
+
+  .role__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .role__label { font-size: 14px; font-weight: 650; }
+  .role__desc { font-size: 11.5px; color: var(--muted); line-height: 1.35; }
+
+  .role__check {
+    width: 20px;
+    height: 20px;
+    border-radius: 50%;
+    border: 2px solid var(--border-strong);
+    position: relative;
+  }
+
+  .role.is-selected .role__check { border-color: var(--brand); background: var(--brand); }
+
+  .role.is-selected .role__check::after {
+    content: '';
+    position: absolute;
+    left: 5px;
+    top: 1px;
+    width: 5px;
+    height: 10px;
+    border: solid #fff;
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg);
+  }
+
+  .login__pin { display: flex; flex-direction: column; gap: var(--s3); }
+
+  .login__error { font-size: 12.5px; font-weight: 600; color: var(--danger); }
+
+  .login__hint {
+    font-size: 11.5px;
+    line-height: 1.6;
+    color: var(--muted);
+    text-align: center;
+    padding-top: var(--s2);
+    border-top: 1px dashed var(--border);
+  }
+
+  .login__hint b { color: var(--brand); font-family: var(--mono); }
+
+  .login__footer {
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+    font-size: 12px;
+  }
+
+  .link--muted { color: var(--muted); font-weight: 500; }
+  .link--muted:hover { color: var(--brand); }
+
+  .icon-btn--ghost {
+    background: transparent;
+    color: var(--muted);
+    width: 34px;
+    height: 34px;
+  }
+
+  .icon-btn--ghost:hover { background: var(--surface-2); color: var(--text); }
+
+  /* --------------------------------------------------------- role chip */
+  .role-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    height: 30px;
+    padding: 0 11px;
+    border-radius: var(--r-full);
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    background: rgb(255 255 255 / 0.10);
+    border: 1px solid rgb(255 255 255 / 0.16);
+    color: #EAF4FB;
+    white-space: nowrap;
+  }
+
+  .role-chip__dot {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--brand);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--brand) 28%, transparent);
+  }
+
+  body[data-role='admin'] .role-chip__dot {
+    background: var(--warn);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--warn) 28%, transparent);
+  }
+
+  body[data-role='patrol'] .role-chip__dot {
+    background: var(--ok);
+    box-shadow: 0 0 0 3px color-mix(in oklab, var(--ok) 28%, transparent);
+  }
+
+  /* ------------------------------------------------------------ patrol */
+  .patrol-pane { display: none; flex-direction: column; gap: var(--s3); }
+  .patrol-pane.is-active { display: flex; }
+
+  .patrol-map-wrap {
+    position: relative;
+    height: min(52vh, 460px);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    border: 1px solid var(--border);
+    background: var(--map-bg);
+  }
+
+  .patrol-map { position: absolute; inset: 0; }
+
+  .inspector-toolbar--inline {
+    position: static;
+    padding: 0;
+    background: none;
+    border: 0;
+    backdrop-filter: none;
+    top: auto;
+  }
+
+  .table-container--inline {
+    padding: 0;
+    overflow: visible;
+    flex: 0 0 auto;
+  }
+
+  .capabilities {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    font-size: 13px;
+  }
+
+  .capabilities li {
+    position: relative;
+    padding-left: 24px;
+    line-height: 1.45;
+  }
+
+  .capabilities li::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    top: 5px;
+    width: 13px;
+    height: 13px;
+    border-radius: 50%;
+    background: var(--ok-soft);
+    border: 1.5px solid var(--ok);
+  }
+
+  .capabilities li.is-off { color: var(--muted); }
+  .capabilities li.is-off::before { background: var(--surface-3); border-color: var(--border-strong); }
+
+  @media (max-width: 640px) {
+    .login { justify-content: flex-start; padding-top: var(--s6); }
+    .login__card { padding: var(--s4); }
+    .patrol-map-wrap { height: 44vh; }
+  }
+}
+

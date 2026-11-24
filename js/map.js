@@ -23,6 +23,7 @@ const MapModule = (function() {
     all: 'All sightings',
     unverified: 'Unverified only',
     reported: 'Reported only',
+    new: 'New only',
     '24h': 'Last 24 hours',
     checked: 'Checked',
     resolved: 'Resolved'
@@ -140,6 +141,8 @@ const MapModule = (function() {
         const created = new Date(s.created_at).getTime();
         return Number.isFinite(created) && (Date.now() - created) <= 86400000;
       }
+      case 'new':
+        return s.status === 'new';
       case 'checked':
         return s.status === 'checked';
       case 'reported':
@@ -360,4 +363,5 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.MapModule = MapModule;
 }
+
 

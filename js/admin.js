@@ -1,143 +1,20 @@
 ﻿// NetSight Admin
-// PIN-gated panel: manage sightings (delete), configure AI providers, security.
+// Administrator panel: manage points (delete), configure the model, manage PINs.
+// Reached through the app-wide login; this page only accepts the admin role.
 
 const Admin = (function() {
   'use strict';
-
-  const SESSION_KEY = CONFIG.ADMIN.sessionKey;
-  const PIN_KEY = CONFIG.ADMIN.pinKey;
 
   let sightings = [];
   let selected = new Set();
   let filter = 'all';
   let sort = 'created_desc';
-  let unlocked = false;
-
-  // --------------------------------------------------------------- hashing
-
-  async function sha256(text) {
-    const bytes = new TextEncoder().encode(text);
-    const digest = await crypto.subtle.digest('SHA-256', bytes);
-    return Array.from(new Uint8Array(digest))
-      .map(b => b.toString(16).padStart(2, '0'))
-      .join('');
-  }
-
-  function getStoredPin() {
-    try { return localStorage.getItem(PIN_KEY); } catch { return null; }
-  }
-
-  async function setPin(pin) {
-    const hash = await sha256(pin);
-    localStorage.setItem(PIN_KEY, hash);
-    return hash;
-  }
-
-  async function checkPin(pin) {
-    const stored = getStoredPin();
-    if (!stored) {
-      // first run — accept the documented default
-      return pin === CONFIG.ADMIN.defaultPin;
-    }
-    return (await sha256(pin)) === stored;
-  }
-
-  // ---------------------------------------------------------------- gate
-
-  function initGate() {
-    const form = document.getElementById('lock-form');
-    const pin = document.getElementById('lock-pin');
-    const pin2 = document.getElementById('lock-pin2');
-    const sub = document.getElementById('lock-sub');
-    const err = document.getElementById('lock-error');
-    const submit = document.getElementById('lock-submit');
-
-    const firstRun = !getStoredPin();
-    if (firstRun) {
-      sub.textContent = 'First run — create a PIN';
-      pin2.hidden = false;
-      submit.textContent = 'Create PIN';
-    }
-
-    form.addEventListener('submit', async e => {
-      e.preventDefault();
-      err.hidden = true;
-
-      const value = pin.value.trim();
-      if (value.length < 4) {
-        err.textContent = 'PIN must be at least 4 characters';
-        err.hidden = false;
-        return;
-      }
-
-      if (firstRun) {
-        if (value !== pin2.value.trim()) {
-          err.textContent = 'The two PINs do not match';
-          err.hidden = false;
-          return;
-        }
-        await setPin(value);
-        unlock();
-        UIModule.showToast('PIN created', 'success');
-        return;
-      }
-
-      if (await checkPin(value)) {
-        unlock();
-      } else {
-        err.textContent = 'Wrong PIN';
-        err.hidden = false;
-        pin.value = '';
-        pin.focus();
-      }
-    });
-
-    pin.focus();
-  }
-
-  function unlock() {
-    unlocked = true;
-    try { sessionStorage.setItem(SESSION_KEY, '1'); } catch { /* ignore */ }
-
-    document.getElementById('lock').hidden = true;
-    showPanel();
-
-    boot();
-  }
-
-  // `.screen` is display:none by default, so the panel needs the active class
-  // as well as the hidden attribute cleared.
-  function showPanel() {
-    const panel = document.getElementById('panel');
-    panel.hidden = false;
-    panel.classList.add('screen--active');
-    const lockEl = document.getElementById('lock');
-    lockEl.hidden = true;
-  }
-
-  function lock() {
-    unlocked = false;
-    try { sessionStorage.removeItem(SESSION_KEY); } catch { /* ignore */ }
-    location.reload();
-  }
-
-  function restoreSession() {
-    try {
-      if (sessionStorage.getItem(SESSION_KEY) === '1') {
-        unlocked = true;
-        document.getElementById('lock').hidden = true;
-        showPanel();
-        boot();
-        return true;
-      }
-    } catch { /* ignore */ }
-    return false;
-  }
 
   // ---------------------------------------------------------------- boot
 
-  async function boot() {
+  async function boot(session) {
     Theme.init();
+    Auth.mount(session);
     Detect.load();
 
     bindTabs();
@@ -546,11 +423,12 @@ const Admin = (function() {
         status.dataset.tone = tone;
       };
 
-      if (!(await checkPin(oldPin))) return say('Current PIN is wrong', 'error');
+      if (!(await Auth.verifyPin('admin', oldPin))) return say('Current PIN is wrong', 'error');
       if (next.length < 4) return say('New PIN must be at least 4 characters', 'error');
       if (next !== again) return say('The two new PINs do not match', 'error');
 
-      await setPin(next);
+      await Auth.setPin('admin', next);
+
       document.getElementById('pin-old').value = '';
       document.getElementById('pin-new').value = '';
       document.getElementById('pin-new2').value = '';
@@ -562,17 +440,13 @@ const Admin = (function() {
   // ------------------------------------------------------------------ init
 
   function init() {
-    if (!restoreSession()) {
-      initGate();
-    }
+    const session = Auth.require(['admin']);
+    if (!session) return;
+    boot(session);
   }
 
-  return { init, lock, isUnlocked: () => unlocked };
+  return { init, reload: boot };
 })();
 
 document.addEventListener('DOMContentLoaded', () => Admin.init());
 window.Admin = Admin;
-
-
-
-

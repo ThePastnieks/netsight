@@ -1,4 +1,4 @@
-# NetSight
+﻿# NetSight
 
 Mobile-first web app for reporting lost or abandoned fishing gear on Riga's
 waterways. A photo goes to a trained model; the model answers whether there is a
@@ -9,13 +9,32 @@ cd C:\claudepro2\netsight
 python -m http.server 8000     # or: npx serve .
 ```
 
-| Page | URL |
-|---|---|
-| Boater app | http://localhost:8000/ |
-| Inspector dashboard | http://localhost:8000/inspector.html |
-| Admin panel | http://localhost:8000/admin.html |
-| Cache reset | http://localhost:8000/reset.html |
+| Page | URL | Who |
+|---|---|---|
+| Sign in | http://localhost:8000/login.html | everyone |
+| Boater app | http://localhost:8000/ | Boater |
+| Water Patrol | http://localhost:8000/patrol.html | Water Patrol |
+| Admin panel | http://localhost:8000/admin.html | Administrator |
+| Cache reset | http://localhost:8000/reset.html | troubleshooting |
 
+Every page except the login and reset screens checks the session and bounces you
+back to `login.html` (or to your own role's page) if you are not allowed in.
+
+## Signing in
+
+The app opens on a role picker. Pick who you are, enter that role's PIN, and you
+land on your own page with your own tabs.
+
+| Role | Default PIN | Lands on | Tabs |
+|---|---|---|---|
+| **Boater** | `1111` | `index.html` | Map · Report · Settings |
+| **Water Patrol** | `2222` | `patrol.html` | Map · Cases · Settings |
+| **Administrator** | `2468` | `admin.html` | Points · AI · Security |
+
+The login screen lists these demo PINs until one is changed. Change them in
+**Admin → Security** (admin) — each role's PIN is stored as a SHA-256 hash in the
+browser and a session lasts 12 hours. This is a prototype lock: it routes three
+kinds of user to three screens, it is not real authentication.
 > The build number lives in `js/config.js → NETSIGHT_BUILD`. Bump it on every
 > release — the HTML pages append `?v=<build>` to every local asset and purge
 > stale service workers, so the browser always loads the new files.
@@ -33,8 +52,9 @@ python -m http.server 8000     # or: npx serve .
 * **Detection** — one HTTP contract. The app posts a photo, the model answers
   `fishing_net: true|false`. Bounding boxes are drawn over the photo when the
   model supplies them. See [DETECT.md](DETECT.md).
-* **Inspector dashboard** — sortable/filterable case table, detail sheet, status
-  transitions with a mandatory comment for `resolved` / `false_alarm`.
+* **Water Patrol** — a map of every case plus a sortable list; open a case and
+  move it along (`new → reported → checked → resolved | false alarm`). No delete,
+  no model config — that is the admin.
 * **Admin panel** — PIN-gated. Delete single points, bulk delete, export JSON,
   wipe, set the model endpoint, change the PIN.
 * **Modern shell** — light/dark/system theme, glass app bar, bottom tab bar,
@@ -114,9 +134,10 @@ Deletion is immediate and permanent.
 ## Project layout
 
 ```
+login.html                 Role picker + PIN — the first screen
 index.html                 Boater app (map, report, settings)
-inspector.html             Inspector dashboard
-admin.html                 Admin panel (PIN, points, detection, security)
+patrol.html                Water Patrol (map, cases, settings)
+admin.html                 Admin panel (points, detection, security)
 reset.html                 One-click cache + service worker purge
 DETECT.md                  The model contract — read this to build the AI
 manifest.webmanifest       PWA metadata
@@ -132,7 +153,8 @@ js/
   ui.js                    Screens, sheets, toasts, verdict card, detail view
   detection.js             Sends the photo, normalises the model's reply
   store.js                 Supabase CRUD with localStorage fallback
-  inspector.js             Inspector table logic
+  auth.js                  Roles, PIN hashes, session and page guards
+  patrol.js                Water Patrol: map + case table + status changes
   admin.js                 PIN gate, point deletion, detection config
   app.js                   Wiring and user flows
 netlify/functions/detect.js The seam: replace runModel() with your model
@@ -141,7 +163,8 @@ supabase/migrations/       Postgres schema for the live backend
 ```
 
 Load order: `config → theme → status → location → registry → map → ui →
-detection → store → app`.
+detection → store → auth → app` (patrol and admin swap the last two for their
+own module).
 
 ---
 
@@ -170,3 +193,4 @@ FileReader, fetch, `color-mix()` (graceful fallback), CSS Grid.
 ## License
 
 MIT — prototype for demonstration purposes.
+

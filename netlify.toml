@@ -1,4 +1,4 @@
-# Netlify Configuration for NetSight
+﻿# Netlify Configuration for NetSight
 
 [build]
   # No build command - static site
@@ -52,8 +52,8 @@
 
 # Redirects for SPA-like behavior (if needed)
 [[redirects]]
-  from = "/inspector"
-  to = "/inspector.html"
+  from = "/patrol"
+  to = "/patrol.html"
   status = 200
 
 [[redirects]]

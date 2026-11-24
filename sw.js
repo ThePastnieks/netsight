@@ -1,13 +1,14 @@
 ﻿/* NetSight service worker — app shell + runtime cache, offline first */
 
-const VERSION = 'netsight-v11';
+const VERSION = 'netsight-v13';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
 const SHELL = [
   './',
   './index.html',
-  './inspector.html',
+  './login.html',
+  './patrol.html',
   './admin.html',
   './manifest.webmanifest',
   './css/style.css',
@@ -23,7 +24,8 @@ const SHELL = [
   './js/store.js',
   './js/app.js',
   './reset.html',
-  './js/inspector.js',
+  './js/auth.js',
+  './js/patrol.js',
   './js/admin.js',
   './data/registry.csv',
   './DETECT.md'
@@ -86,6 +88,9 @@ self.addEventListener('fetch', event => {
     }).catch(() => cached))
   );
 });
+
+
+
 
 
 

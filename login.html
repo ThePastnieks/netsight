@@ -1,0 +1,233 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#0B2A4A">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Pragma" content="no-cache">
+  <meta http-equiv="Expires" content="0">
+  <title>NetSight — Sign in</title>
+
+  <script>
+  (function () {
+    var BUILD = '2026.11.24.4';
+    var KEY = 'netsight_build';
+    var seen = null;
+    try { seen = localStorage.getItem(KEY); } catch (e) {}
+    if (seen === BUILD) return;
+    try { localStorage.setItem(KEY, BUILD); } catch (e) {}
+    var tasks = [];
+    if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
+      tasks.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
+        return Promise.all(regs.map(function (r) { return r.unregister(); }));
+      }).catch(function () {}));
+    }
+    if (window.caches && caches.keys) {
+      tasks.push(caches.keys().then(function (keys) {
+        return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+      }).catch(function () {}));
+    }
+    if (seen) { Promise.all(tasks).then(function () { location.reload(); }); }
+  })();
+  </script>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" href="assets/netsight-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.24.4">
+
+  <script src="js/config.js?v=2026.11.24.4"></script>
+  <script src="js/theme.js?v=2026.11.24.4"></script>
+</head>
+<body data-page="login">
+
+  <div class="toast-container" id="toast-container"></div>
+  <div id="modal-overlay" class="modal-overlay" hidden></div>
+  <div id="loading-overlay" class="loading-overlay" hidden>
+    <div class="loading-overlay__card">
+      <div class="spinner"></div>
+      <p id="loading-message">Signing in…</p>
+    </div>
+  </div>
+
+  <main class="login">
+
+    <header class="login__brand">
+      <img src="assets/netsight-logo.svg" alt="" width="46" height="46" class="login__logo">
+      <h1 class="login__title">NetSight</h1>
+      <p class="login__tagline">Fishing gear reporting · Riga waterways</p>
+    </header>
+
+    <form class="login__card" id="login-form" autocomplete="off" novalidate>
+
+      <p class="login__step">Sign in as</p>
+
+      <div class="roles" id="roles" role="radiogroup" aria-label="Choose your role"></div>
+
+      <div class="login__pin" id="pin-block" hidden>
+        <label class="field">
+          <span class="field__label" id="pin-label">PIN</span>
+          <input class="input input--pin" id="login-pin" type="password" inputmode="numeric"
+                 autocomplete="off" placeholder="••••" aria-describedby="login-error">
+        </label>
+
+        <p class="login__error" id="login-error" hidden></p>
+
+        <button type="submit" class="btn btn--primary btn--lg btn--block" id="login-submit">
+          Sign in
+        </button>
+      </div>
+
+      <p class="login__hint" id="login-hint" hidden></p>
+
+    </form>
+
+    <footer class="login__footer">
+      <button type="button" class="icon-btn icon-btn--ghost" data-theme-toggle aria-label="Theme">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
+          <circle cx="12" cy="12" r="4"></circle>
+          <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
+        </svg>
+      </button>
+      <a class="link link--muted" href="reset.html?manual">Clear cached files</a>
+    </footer>
+
+  </main>
+
+  <script src="js/ui.js?v=2026.11.24.4"></script>
+  <script src="js/auth.js?v=2026.11.24.4"></script>
+  <script>
+  (function () {
+    'use strict';
+
+    let selected = null;
+
+    const rolesEl = document.getElementById('roles');
+    const pinBlock = document.getElementById('pin-block');
+    const pinInput = document.getElementById('login-pin');
+    const pinLabel = document.getElementById('pin-label');
+    const errorEl = document.getElementById('login-error');
+    const hintEl = document.getElementById('login-hint');
+    const form = document.getElementById('login-form');
+    const submit = document.getElementById('login-submit');
+
+    function say(message) {
+      errorEl.textContent = message;
+      errorEl.hidden = !message;
+    }
+
+    function renderRoles() {
+      rolesEl.innerHTML = Auth.roles().map(r => `
+        <button type="button" class="role" data-role="${r.id}" role="radio" aria-checked="false">
+          <span class="role__icon">${icon(r.icon)}</span>
+          <span class="role__text">
+            <span class="role__label">${r.label}</span>
+            <span class="role__desc">${r.desc}</span>
+          </span>
+          <span class="role__check" aria-hidden="true"></span>
+        </button>
+      `).join('');
+
+      rolesEl.querySelectorAll('[data-role]').forEach(btn => {
+        btn.addEventListener('click', () => select(btn.dataset.role));
+      });
+    }
+
+    function icon(name) {
+      const paths = {
+        anchor: '<circle cx="12" cy="5" r="2.5"></circle><path d="M12 7.5V21M5 13a7 7 0 0 0 14 0M5 13H3M19 13h2"></path>',
+        shield: '<path d="M12 3l7 3v6c0 4.5-3 7.7-7 9-4-1.3-7-4.5-7-9V6z"></path><path d="M9.5 12.5l1.8 1.8 3.4-3.6"></path>',
+        gear: '<circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"></path>'
+      };
+      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.gear}</svg>`;
+    }
+
+    function select(id) {
+      selected = id;
+      say('');
+
+      rolesEl.querySelectorAll('[data-role]').forEach(btn => {
+        const on = btn.dataset.role === id;
+        btn.classList.toggle('is-selected', on);
+        btn.setAttribute('aria-checked', String(on));
+      });
+
+      const role = Auth.role(id);
+      pinLabel.textContent = role ? role.label + ' PIN' : 'PIN';
+      pinBlock.hidden = false;
+      pinInput.value = '';
+      pinInput.focus();
+    }
+
+    form.addEventListener('submit', async e => {
+      e.preventDefault();
+
+      if (!selected) {
+        say('Choose a role first');
+        return;
+      }
+
+      const pin = pinInput.value.trim();
+      if (!pin) {
+        say('Enter your PIN');
+        pinInput.focus();
+        return;
+      }
+
+      submit.disabled = true;
+      document.getElementById('loading-overlay').hidden = false;
+      document.getElementById('loading-overlay').classList.add('loading-overlay--visible');
+
+      const result = await Auth.login(selected, pin);
+
+      if (!result.ok) {
+        submit.disabled = false;
+        const overlay = document.getElementById('loading-overlay');
+        overlay.classList.remove('loading-overlay--visible');
+        overlay.hidden = true;
+
+        say(result.message);
+        pinInput.value = '';
+        pinInput.focus();
+        return;
+      }
+
+      location.replace(Auth.pageFor(selected));
+    });
+
+    // Already signed in? Go straight to that role's page.
+    const existing = Auth.current();
+    renderRoles();
+
+    if (Auth.usingDefaultPins()) {
+      hintEl.hidden = false;
+      hintEl.innerHTML = 'Demo PINs — ' + Auth.defaultPins()
+        .map(r => `${r.label} <b>${r.pin}</b>`)
+        .join(' · ');
+    }
+
+    if (existing) {
+      select(existing.role);
+      pinInput.value = '';
+      pinInput.placeholder = 'already signed in as ' + existing.label;
+      hintEl.hidden = false;
+      hintEl.innerHTML = 'You are signed in as <b>' + existing.label +
+        '</b>. Continue, or sign in as someone else.';
+      submit.textContent = 'Continue as ' + existing.label;
+
+      submit.addEventListener('click', () => {
+        if (!pinInput.value.trim()) {
+          location.replace(Auth.pageFor(existing.role));
+        }
+      }, { once: true });
+    }
+
+    Theme.init();
+  })();
+  </script>
+</body>
+</html>
+
+
+
+

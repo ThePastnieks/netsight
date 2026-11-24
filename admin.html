@@ -11,7 +11,7 @@
 
   <script>
   (function () {
-    var BUILD = '2026.11.24.2';
+    var BUILD = '2026.11.24.4';
     var KEY = 'netsight_build';
     var seen = null;
     try { seen = localStorage.getItem(KEY); } catch (e) {}
@@ -34,10 +34,10 @@
 
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/netsight-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css?v=2026.11.24.2">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.24.4">
 
-  <script src="js/config.js?v=2026.11.24.2"></script>
-  <script src="js/theme.js?v=2026.11.24.2"></script>
+  <script src="js/config.js?v=2026.11.24.4"></script>
+  <script src="js/theme.js?v=2026.11.24.4"></script>
 </head>
 <body data-page="admin">
 
@@ -51,30 +51,8 @@
   <div id="modal-overlay" class="modal-overlay" hidden></div>
   <div id="toast-container" class="toast-container"></div>
 
-  <!-- ==================== LOCK ==================== -->
-  <div id="lock" class="lock">
-    <form class="lock__card" id="lock-form" autocomplete="off">
-      <img class="lock__logo" src="assets/netsight-logo.svg" alt="" width="42" height="42">
-      <h1 class="lock__title">Admin</h1>
-      <p class="lock__sub" id="lock-sub">Enter your PIN</p>
-
-      <input class="input input--pin" id="lock-pin" type="password" inputmode="numeric"
-             autocomplete="off" placeholder="••••" aria-label="PIN">
-
-      <input class="input" id="lock-pin2" type="password" inputmode="numeric"
-             autocomplete="off" placeholder="Repeat PIN" aria-label="Repeat PIN" hidden>
-
-      <p class="lock__error" id="lock-error" hidden></p>
-
-      <button type="submit" class="btn btn--primary btn--lg btn--block" id="lock-submit">
-        Unlock
-      </button>
-      <a class="link lock__back" href="index.html">← Back to app</a>
-    </form>
-  </div>
-
   <!-- ==================== PANEL ==================== -->
-  <div class="screen" id="panel" hidden>
+  <div class="screen screen--active" id="panel">
     <header class="app-bar">
       <div class="app-bar__left">
         <img class="app-bar__logo" src="assets/netsight-logo.svg" alt="" width="26" height="26">
@@ -84,16 +62,21 @@
         </div>
       </div>
       <div class="app-bar__right">
+        <span class="role-chip">
+          <span class="role-chip__dot"></span>
+          <span data-role-short>Admin</span>
+        </span>
         <button type="button" class="icon-btn" data-theme-toggle aria-label="Theme">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <circle cx="12" cy="12" r="4"></circle>
             <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
           </svg>
         </button>
-        <button type="button" class="icon-btn" id="btn-lock" aria-label="Lock" title="Lock">
+        <button type="button" class="icon-btn" data-signout aria-label="Sign out" title="Sign out">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-            <rect x="3" y="11" width="18" height="11" rx="2"></rect>
-            <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+            <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
+            <polyline points="16 17 21 12 16 7"></polyline>
+            <line x1="21" y1="12" x2="9" y2="12"></line>
           </svg>
         </button>
       </div>
@@ -280,11 +263,18 @@
           <header class="card__head">
             <h2 class="card__title">Session</h2>
           </header>
-          <div class="card__body">
-            <button type="button" class="btn btn--soft btn--block" id="btn-lock-2">Lock now</button>
+          <div class="card__body stack-sm">
+            <div class="ai-status-row">
+              <span class="ai-status-row__dot" data-state="ready"></span>
+              <div class="ai-status-row__text">
+                <span class="ai-status-row__title" data-role-label>Administrator</span>
+                <span class="ai-status-row__sub">Signed in · full access</span>
+              </div>
+            </div>
+            <button type="button" class="btn btn--soft btn--block" data-signout>Sign out</button>
             <p class="hint">
-              The panel locks when this tab closes. The PIN is stored as a
-              SHA-256 hash in this browser only.
+              The session lasts 12 hours, then the login screen comes back.
+              PINs are stored as SHA-256 hashes in this browser only.
             </p>
           </div>
         </div>
@@ -293,13 +283,19 @@
     </div>
   </div>
 
-  <script src="js/status.js?v=2026.11.24.2"></script>
-  <script src="js/store.js?v=2026.11.24.2"></script>
-  <script src="js/ui.js?v=2026.11.24.2"></script>
-  <script src="js/detection.js?v=2026.11.24.2"></script>
-  <script src="js/admin.js?v=2026.11.24.2"></script>
+  <script src="js/status.js?v=2026.11.24.4"></script>
+  <script src="js/store.js?v=2026.11.24.4"></script>
+  <script src="js/ui.js?v=2026.11.24.4"></script>
+  <script src="js/detection.js?v=2026.11.24.4"></script>
+  <script src="js/auth.js?v=2026.11.24.4"></script>
+  <script src="js/admin.js?v=2026.11.24.4"></script>
 </body>
 </html>
+
+
+
+
+
 
 
 
