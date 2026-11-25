@@ -2284,3 +2284,108 @@
 }
 
 
+
+/* ===================== SHORE DRAWING =================================== */
+@layer components {
+
+  .draw-tools {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: var(--s2);
+  }
+
+  .draw-tool {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+    padding: var(--s3) var(--s2);
+    border-radius: var(--r-sm);
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    font-size: 11.5px;
+    font-weight: 650;
+    color: var(--muted);
+    transition: background var(--t-fast), color var(--t-fast), border-color var(--t-fast);
+  }
+
+  .draw-tool svg { width: 20px; height: 20px; }
+  .draw-tool:hover { color: var(--text); }
+
+  .draw-tool.is-active {
+    background: var(--brand-soft);
+    border-color: color-mix(in oklab, var(--brand) 55%, transparent);
+    color: var(--brand);
+  }
+
+  .draw-hint {
+    padding: 6px 10px;
+    border-radius: var(--r-sm);
+    font-size: 11.5px;
+    font-weight: 600;
+    text-align: center;
+    line-height: 1.45;
+    background: var(--surface-2);
+    color: var(--muted);
+  }
+
+  .draw-hint[data-state='ok'] {
+    background: color-mix(in oklab, var(--ok) 12%, transparent);
+    color: var(--ok);
+  }
+
+  .shore-map {
+    height: 340px;
+    border-radius: var(--r-md);
+    border: 1px solid var(--border);
+    overflow: hidden;
+    background: var(--surface-2);
+  }
+
+  .shore-list { display: flex; flex-direction: column; gap: var(--s2); }
+
+  .shore-item {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: var(--s3);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-md);
+  }
+
+  .shore-item__head {
+    display: flex;
+    justify-content: space-between;
+    align-items: baseline;
+    gap: var(--s2);
+  }
+
+  .shore-item__name { font-size: 13.5px; font-weight: 650; }
+
+  .shore-item__kind {
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 2px 7px;
+    border-radius: var(--r-full);
+    background: var(--surface-3);
+    color: var(--muted);
+  }
+
+  .shore-item__meta {
+    display: flex;
+    gap: var(--s3);
+    font-size: 11.5px;
+    color: var(--muted);
+  }
+
+  .shore-item__actions { display: flex; gap: 6px; justify-content: flex-end; }
+}
+
+  .fence-hint[data-state='idle'] {
+    border-color: var(--border);
+    background: var(--surface-2);
+    color: var(--muted);
+  }

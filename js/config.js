@@ -2,7 +2,7 @@
 
 // Build stamp — bump this on every release. It is used to bust browser caches
 // (asset query strings) and to purge stale service workers.
-const NETSIGHT_BUILD = '2026.11.26.3';
+const NETSIGHT_BUILD = '2026.11.26.4';
 
 const CONFIG = {
   BUILD: NETSIGHT_BUILD,
@@ -45,10 +45,8 @@ const CONFIG = {
     offlineHours: 6,        // silent longer than this is an alert
     driftMetres: 25,        // moved this far from where it was registered
 
-    // The 50 m rule. The water itself lives in data/water.json — a 20 m grid
-    // sampled from the OpenStreetMap tiles, with every water cell at least this
-    // far from land marked permitted. Regenerate with tools/build-mask.py then
-    // tools/build-water.cjs.
+    // The 50 m rule. The shoreline is drawn by hand in Admin -> Shore; every
+    // shape there is closed water, and this is how far inside it gear may go.
     minShoreMetres: 50
   },
 
@@ -119,6 +117,8 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.CONFIG = CONFIG;
 }
+
+
 
 
 

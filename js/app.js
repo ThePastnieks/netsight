@@ -31,7 +31,6 @@ const App = (function() {
     syncDetectChrome();
 
     await RegistryModule.loadRegistry();
-    await Devices.loadWater();
 
     const map = MapModule.initMap('map', CONFIG.MAP_CENTER, CONFIG.MAP_ZOOM);
     if (!map) UIModule.showToast('Map failed to load', 'error');
@@ -338,6 +337,16 @@ const App = (function() {
     const minShore = CONFIG.DEVICES.minShoreMetres;
 
     hint.hidden = false;
+    hint.hidden = false;
+
+    // "idle" is only for the case where nobody has drawn a shoreline yet — a
+    // real refusal (off the water, too close) is always "blocked".
+    if (fence.onWater === null) {
+      hint.dataset.state = 'idle';
+      hint.textContent = fence.reason;
+      return;
+    }
+
     hint.dataset.state = fence.allowed ? 'ok' : 'blocked';
     hint.textContent = fence.allowed
       ? Math.round(fence.shoreDistance) + ' m from shore (min ' + minShore + ' m)'
@@ -576,6 +585,9 @@ const App = (function() {
 
 document.addEventListener('DOMContentLoaded', () => App.init());
 window.App = App;
+
+
+
 
 
 

@@ -257,232 +257,14 @@ const Devices = (function() {
 
   // -------------------------------------------------------------- geofence
   //
-  // Water is not guessed and not hand-traced. data/water.json holds a 20 m grid
-  // built by sampling the OpenStreetMap raster tiles — the same water the map
-  // draws — and marking every water cell that is at least 50 m from land.
-  //
-  // So the red line on the map and the check that refuses a report read the
-  // same cells. There is no way for them to disagree.
+  // The shoreline is drawn by hand in Admin -> Shore. This module only needs to
+  // ask it one question, and to keep the old call sites working.
 
-  const WATER_URL = 'data/water.json';
-  let waterGrid = null;      // { area, cols, rows, dLat, dLon, water, permitted }
-  let waterPromise = null;
-
-  function unpackBits(b64, length) {
-    const bin = atob(b64);
-    const out = new Uint8Array(length);
-    for (let i = 0; i < length; i++) {
-      out[i] = (bin.charCodeAt(i >> 3) >> (i & 7)) & 1;
-    }
-    return out;
-  }
-
-  // Loads the grid once. Safe to call from anywhere; resolves immediately after.
-  function loadWater() {
-    if (waterGrid) return Promise.resolve(waterGrid);
-    if (waterPromise) return waterPromise;
-
-    waterPromise = fetch(WATER_URL, { cache: 'no-cache' })
-      .then(res => {
-        if (!res.ok) throw new Error('water grid: HTTP ' + res.status);
-        return res.json();
-      })
-      .then(data => {
-        const area = data.area;
-        const midLat = (area.minLat + area.maxLat) / 2;
-
-        waterGrid = {
-          area,
-          cols: data.cols,
-          rows: data.rows,
-          cellMetres: data.cellMetres,
-          minShoreMetres: data.minShoreMetres,
-          dLat: (area.maxLat - area.minLat) / data.rows,
-          dLon: (area.maxLon - area.minLon) / data.cols,
-          water: unpackBits(data.water, data.cols * data.rows),
-          permitted: unpackBits(data.permitted, data.cols * data.rows),
-          midLat
-        };
-
-        return waterGrid;
-      })
-      .catch(err => {
-        console.warn('Could not load the water grid:', err);
-        waterPromise = null;
-        return null;
-      });
-
-    return waterPromise;
-  }
-
-  function gridReady() {
-    return !!waterGrid;
-  }
-
-  function cellOf(lat, lon) {
-    if (!waterGrid) return null;
-
-    const c = Math.floor((lon - waterGrid.area.minLon) / waterGrid.dLon);
-    const r = Math.floor((lat - waterGrid.area.minLat) / waterGrid.dLat);
-
-    if (r < 0 || r >= waterGrid.rows || c < 0 || c >= waterGrid.cols) return null;
-    return { r, c, i: r * waterGrid.cols + c };
-  }
-
-  function isWater(lat, lon) {
-    const cell = cellOf(lat, lon);
-    return cell ? waterGrid.water[cell.i] === 1 : false;
-  }
-
-  function isPermitted(lat, lon) {
-    const cell = cellOf(lat, lon);
-    return cell ? waterGrid.permitted[cell.i] === 1 : false;
-  }
-
-  // Distance in metres to the nearest land, capped at maxMetres. Walks outward
-  // in rings; the grid is 20 m so 500 m is 25 rings and still instant.
-  function distanceToLand(lat, lon, maxMetres) {
-    if (!waterGrid) return null;
-
-    const cap = maxMetres || 600;
-    const cell = cellOf(lat, lon);
-    if (!cell) return null;
-
-    const { cols, rows, water, cellMetres } = waterGrid;
-    const maxRing = Math.ceil(cap / cellMetres);
-
-    if (water[cell.i] === 0) return 0;
-
-    for (let ring = 1; ring <= maxRing; ring++) {
-      let touchedLand = false;
-
-      for (let dr = -ring; dr <= ring && !touchedLand; dr++) {
-        for (let dc = -ring; dc <= ring; dc++) {
-          if (Math.abs(dr) !== ring && Math.abs(dc) !== ring) continue;
-
-          const rr = cell.r + dr, cc = cell.c + dc;
-          // off the grid counts as land: the edge of the data is not water we
-          // can vouch for
-          if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) {
-            touchedLand = true;
-            break;
-          }
-          if (water[rr * cols + cc] === 0) {
-            touchedLand = true;
-            break;
-          }
-        }
-      }
-
-      if (touchedLand) return ring * cellMetres;
-    }
-
-    return cap;
-  }
-
-  // The one question the app asks: may gear go here?
   function checkGeofence(lat, lon) {
-    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-      return { allowed: false, inside: false, shoreDistance: null, reason: 'No coordinates' };
+    if (typeof Shore === 'undefined') {
+      return { allowed: true, onWater: null, shoreDistance: null, reason: 'Shoreline module missing' };
     }
-
-    if (!waterGrid) {
-      return {
-        allowed: false,
-        inside: false,
-        shoreDistance: null,
-        reason: 'Water data is still loading'
-      };
-    }
-
-    if (!isWater(lat, lon)) {
-      return {
-        allowed: false,
-        inside: false,
-        shoreDistance: 0,
-        reason: 'Not on water'
-      };
-    }
-
-    const shore = distanceToLand(lat, lon, 600);
-    const min = CFG.minShoreMetres;
-
-    if (isPermitted(lat, lon)) {
-      return {
-        allowed: true,
-        inside: true,
-        shoreDistance: shore,
-        reason: `${Math.round(shore)} m from shore`
-      };
-    }
-
-    return {
-      allowed: false,
-      inside: true,
-      shoreDistance: shore,
-      reason: `${Math.round(shore)} m from shore — at least ${min} m required`
-    };
-  }
-
-  // The permitted shape, as cells, for the map to paint. Returns a run-length
-  // encoded list so the map can build it without holding the whole grid.
-  function permittedCells() {
-    if (!waterGrid) return [];
-
-    const out = [];
-    const { cols, rows, permitted } = waterGrid;
-
-    for (let r = 0; r < rows; r++) {
-      let runStart = -1;
-
-      for (let c = 0; c <= cols; c++) {
-        const on = c < cols && permitted[r * cols + c] === 1;
-
-        if (on && runStart === -1) runStart = c;
-        else if (!on && runStart !== -1) {
-          out.push({ r, c0: runStart, c1: c - 1 });
-          runStart = -1;
-        }
-      }
-    }
-
-    return out;
-  }
-
-  // Water cells too, so the map can show the river itself rather than only the
-  // band you may use.
-  function waterCells() {
-    if (!waterGrid) return [];
-
-    const out = [];
-    const { cols, rows, water } = waterGrid;
-
-    for (let r = 0; r < rows; r++) {
-      let runStart = -1;
-
-      for (let c = 0; c <= cols; c++) {
-        const on = c < cols && water[r * cols + c] === 1;
-
-        if (on && runStart === -1) runStart = c;
-        else if (!on && runStart !== -1) {
-          out.push({ r, c0: runStart, c1: c - 1 });
-          runStart = -1;
-        }
-      }
-    }
-
-    return out;
-  }
-
-  function gridInfo() {
-    if (!waterGrid) return null;
-    return {
-      area: waterGrid.area,
-      cols: waterGrid.cols,
-      rows: waterGrid.rows,
-      cellMetres: waterGrid.cellMetres,
-      minShoreMetres: waterGrid.minShoreMetres
-    };
+    return Shore.checkGeofence(lat, lon);
   }
 
   function haversine(lat1, lon1, lat2, lon2) {
@@ -532,14 +314,6 @@ const Devices = (function() {
     summary,
     worstLevel,
     checkGeofence,
-    loadWater,
-    gridReady,
-    isWater,
-    isPermitted,
-    distanceToLand,
-    permittedCells,
-    waterCells,
-    gridInfo,
     applyTelemetry,
     haversine
   };
@@ -550,6 +324,7 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.Devices = Devices;
 }
+
 
 
 

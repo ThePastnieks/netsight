@@ -33,7 +33,6 @@ const Patrol = (function() {
     bindTableControls();
 
     await RegistryModule.loadRegistry();
-    await Devices.loadWater();
 
     const map = MapModule.initMap('patrol-map', CONFIG.MAP_CENTER, CONFIG.MAP_ZOOM);
     if (!map) UIModule.showToast('Map failed to load', 'error');
@@ -246,6 +245,7 @@ const Patrol = (function() {
 
 document.addEventListener('DOMContentLoaded', () => Patrol.init());
 window.Patrol = Patrol;
+
 
 
 

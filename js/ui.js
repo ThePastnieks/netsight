@@ -473,6 +473,30 @@ const UIModule = (function() {
   }
 
   // Confirmation dialog - returns Promise<boolean>
+  // A one-line text prompt. Resolves to the string, or null if cancelled.
+  function prompt(message, value, options = {}) {
+    return new Promise((resolve) => {
+      const id = 'prompt-input-' + Date.now().toString(36);
+      const content =
+        `<p>${escapeHtml(message)}</p>` +
+        `<label class="field"><span class="visually-hidden">Value</span>` +
+        `<input class="input" id="${id}" type="text" value="${escapeHtml(value || '')}"></label>`;
+
+      showModal(options.title || 'Enter a value', content, [
+        { label: options.cancelLabel || 'Cancel', action: 'cancel', class: 'btn--secondary', handler: () => resolve(null) },
+        { label: options.confirmLabel || 'Save', action: 'confirm', class: 'btn--primary', handler: () => {
+            const el = document.getElementById(id);
+            resolve(el ? el.value.trim() : '');
+          }
+        }
+      ]);
+
+      setTimeout(() => {
+        const el = document.getElementById(id);
+        if (el) { el.focus(); el.select(); }
+      }, 60);
+    });
+  }
   function confirm(message, options = {}) {
     return new Promise((resolve) => {
       const content = `<p>${escapeHtml(message)}</p>`;
@@ -613,6 +637,7 @@ const UIModule = (function() {
     showStatusModal,
     showDetailView,
     confirm,
+    prompt,
     init,
     escapeHtml
   };
@@ -624,6 +649,7 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.UIModule = UIModule;
 }
+
 
 
 

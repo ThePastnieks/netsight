@@ -134,36 +134,30 @@ the line is painted from, so the boundary you see is the boundary that decides.
 
 Thresholds live in `CONFIG.DEVICES` in `js/config.js`.
 
-### Where the water comes from
+### Drawing the shore
 
-The 50 m limit is not hand-drawn. It is measured from the water the map itself
-draws:
+The 50 m limit is not measured from a map layer or a guess. Somebody draws the
+bank, and the app measures 50 m inward from what they drew. If nothing is drawn
+there is no limit, and the report screen says so instead of inventing one.
 
-1. `tools/build-mask.py` reads the OpenStreetMap raster tiles at z15 and marks
-   every pixel painted as water.
-2. `tools/build-water.cjs` downsamples that to 20 m cells, closes the seams,
-   runs a chamfer distance transform, and keeps every water cell at least 50 m
-   from land.
-3. `data/water.json` ships both grids, packed as base64 bits (63 KB).
+Admin → **Shore** has three tools, because a bank is rarely one thing:
 
-`Devices.checkGeofence()` reads those cells, and `MapModule.toggleZones()` paints
-the same cells as the red line. One grid, so the line and the rule cannot
-disagree.
+| Tool | Use it for | How |
+|---|---|---|
+| **Polygon** | A river reach, a quay, a basin | Tap the corners, press Finish |
+| **Circle** | An island, a pond, a mooring ring | Tap the centre, tap the edge |
+| **Freehand** | A natural bank with no straight edges | Press and drag to trace |
 
-The first attempt traced OSM *polygons* instead. It failed: through the centre
-OSM does not describe the Daugava as one closed area — `is_in()` at the middle of
-the river returns a park — so every offset ran across dry land. The raster has no
-such hole.
+Each finished shape is closed water. The red line is that shape offset inward by
+`CONFIG.DEVICES.minShoreMetres` — measured, not approximated: a test at every
+vertex of the offset returns 50 m.
 
-Regenerate after a map data change:
+A shape narrower than twice the limit has no legal interior. The app refuses it
+and says why rather than drawing a line down the middle of a stream nobody may
+use.
 
-```
-python tools/build-mask.py      # ~192 tiles, writes tools/water-mask.json
-node tools/build-water.cjs      # writes data/water.json
-```
-
-`tools/water-mask.json` is a 24 MB intermediate and is gitignored.
-
+Shapes live in `localStorage` under `netsight_shore`. Draw them once per browser;
+move them to the backend when the shoreline is settled.
 ### Nets are a line
 
 A net is not a point. For `net` and `trap` the report screen shows a **Net line**
@@ -255,6 +249,7 @@ either the round-trip time and model name, or exactly what went wrong.
 |---|---|
 | **Points** | Every sighting with thumbnail, status, type, confidence, coordinates and age. Filter, sort, delete one, bulk delete, export JSON, delete all. |
 | **Devices** | The buoy fleet: battery, temperature, level, lift alerts. |
+| **Shore** | Draw the bank with Polygon, Circle or Freehand; the 50 m limit follows. |
 | **AI** | Model endpoint, confidence threshold, connection test, and the reply contract. |
 | **Users** | Every account, its role, and a dropdown to promote or demote it. |
 | **Security** | Change your own password, sign out. |
@@ -270,10 +265,6 @@ login.html                 Sign in / create account — the first screen
 index.html                 User app (map, report, settings)
 patrol.html                Water Patrol (map, cases, settings)
 admin.html                 Admin panel (points, detection, security)
-devices.js                 Buoy fleet, alerts, water grid, geofence
-tools/build-mask.py        Tiles -> water mask
-tools/build-water.cjs      Mask -> data/water.json
-                Buoy fleet: telemetry, alerts, geofence
 HARDWARE.md                Hardware spec read-through: what the device must do
 DETECT.md                  The model contract — read this to build the AI
 manifest.webmanifest       PWA metadata (install prompt, no service worker)
@@ -289,12 +280,13 @@ js/
   detection.js             Sends the photo, normalises the model's reply
   store.js                 Supabase CRUD with localStorage fallback
   auth.js                  Accounts, PBKDF2 hashes, session, role guards
+  shore.js                 Hand-drawn shoreline, 50 m offset, geofence
+  devices.js               Buoy fleet: telemetry, alerts
   patrol.js                Water Patrol: map + case table + status changes
   admin.js                 Points, detection config, accounts, password
   app.js                   Wiring and user flows
 netlify/functions/telemetry.js  Buoy data in
 netlify/functions/detect.js The seam: replace runModel() with your model
-data/water.json              Water grids: 20 m cells, water + permitted
 data/registry.csv          Registered gear
 supabase/migrations/       Postgres schema for the live backend
 ```
@@ -330,6 +322,9 @@ FileReader, fetch, `color-mix()` (graceful fallback), CSS Grid.
 ## License
 
 MIT — prototype for demonstration purposes.
+
+
+
 
 
 

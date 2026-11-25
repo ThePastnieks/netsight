@@ -24,7 +24,7 @@ const MapModule = (function() {
   // Geofence palette. Red is the 50 m limit, green is gear on the water.
   const LIMIT_LINE = '#E5484D';
   const PERMIT_FILL = '#2FA36B';
-  const PERMIT_FILL_SOFT = 'rgba(47, 163, 107, 0.14)';
+  const BANK_LINE = '#7D8C99';
   const GEAR_LINE = '#2FA36B';
   const FILTER_LABELS = {
     all: 'All sightings',
@@ -355,64 +355,29 @@ const MapModule = (function() {
 
   // Draws the permitted water: the bank itself as a hairline, the 50 m limit as
   // the red line, and a soft fill for the area you may actually use.
-  // Paints the permitted water from the grid: a soft green wash over the area
-  // you may use, and the 50 m limit as a red line along its edge.
+  // ---------------------------------------------------------------- zones
   //
-  // Drawn into a canvas at 3 px per cell, then handed to Leaflet as one image
-  // overlay. That keeps it a single layer however many cells there are, and the
-  // browser's own smoothing turns the cell steps into a clean edge.
-  const ZONE_SCALE = 3;
+  // The red line is the drawn shoreline moved inward by minShoreMetres. Nothing
+  // is inferred: if nobody has drawn a bank, there is no line, and the app says
+  // so rather than inventing one.
 
-  function zoneCanvas() {
-    const info = Devices.gridInfo();
-    if (!info) return null;
+  function shapeLatLngs(shape) {
+    if (shape.kind === 'circle') {
+      const pts = [];
+      const R = 6371000;
+      const dLat = (shape.radius / R) * 180 / Math.PI;
 
-    const cells = Devices.permittedCells();
-    if (!cells.length) return null;
-
-    const w = info.cols * ZONE_SCALE;
-    const h = info.rows * ZONE_SCALE;
-
-    const canvas = document.createElement('canvas');
-    canvas.width = w;
-    canvas.height = h;
-
-    const ctx = canvas.getContext('2d');
-    const at = (r, c) => c >= 0 && c < info.cols && r >= 0 && r < info.rows
-      ? Devices.isPermitted(
-          info.area.minLat + (r + 0.5) * ((info.area.maxLat - info.area.minLat) / info.rows),
-          info.area.minLon + (c + 0.5) * ((info.area.maxLon - info.area.minLon) / info.cols))
-      : false;
-
-    // 1. the wash
-    ctx.fillStyle = PERMIT_FILL_SOFT;
-    cells.forEach(run => {
-      ctx.fillRect(run.c0 * ZONE_SCALE, run.r * ZONE_SCALE,
-        (run.c1 - run.c0 + 1) * ZONE_SCALE, ZONE_SCALE);
-    });
-
-    // 2. the limit: every permitted cell that touches a non-permitted one
-    ctx.fillStyle = LIMIT_LINE;
-    const t = ZONE_SCALE;
-
-    cells.forEach(run => {
-      for (let c = run.c0; c <= run.c1; c++) {
-        const edge = !at(run.r - 1, c) || !at(run.r + 1, c)
-          || !at(run.r, c - 1) || !at(run.r, c + 1);
-
-        if (!edge) continue;
-
-        // draw the cell's outline on the sides that face out, so the line is
-        // one cell thick rather than a filled band
-        if (!at(run.r - 1, c)) ctx.fillRect(c * t, run.r * t, t, t * 0.5);
-        if (!at(run.r + 1, c)) ctx.fillRect(c * t, run.r * t + t * 0.5, t, t * 0.5);
-        if (!at(run.r, c - 1)) ctx.fillRect(c * t, run.r * t, t * 0.5, t);
-        if (!at(run.r, c + 1)) ctx.fillRect(c * t + t * 0.5, run.r * t, t * 0.5, t);
+      for (let i = 0; i < 64; i++) {
+        const a = (i / 64) * 2 * Math.PI;
+        const lat = shape.lat + dLat * Math.cos(a);
+        const lon = shape.lon + (shape.radius / (R * Math.cos(shape.lat * Math.PI / 180))) *
+          Math.sin(a) * 180 / Math.PI;
+        pts.push([lat, lon]);
       }
-    });
+      return pts;
+    }
 
-    return { canvas, bounds: [[info.area.minLat, info.area.minLon],
-                             [info.area.maxLat, info.area.maxLon]] };
+    return shape.coords;
   }
 
   function toggleZones(show) {
@@ -425,16 +390,69 @@ const MapModule = (function() {
       return false;
     }
 
-    if (typeof Devices === 'undefined' || !Devices.gridReady()) return false;
+    if (typeof Shore === 'undefined') return false;
 
-    const built = zoneCanvas();
-    if (!built) return false;
+    const limit = CONFIG.DEVICES.minShoreMetres;
 
-    L.imageOverlay(built.canvas.toDataURL('image/png'), built.bounds, {
-      opacity: 1,
-      interactive: false,
-      className: 'zone-overlay'
-    }).addTo(zoneLayer);
+    // The bank itself, as drawn.
+    Shore.all().forEach(shape => {
+      const pts = shapeLatLngs(shape);
+
+      if (shape.kind === 'circle') {
+        L.circle([shape.lat, shape.lon], {
+          radius: shape.radius,
+          color: BANK_LINE,
+          weight: 1.5,
+          opacity: 0.55,
+          dashArray: '4 6',
+          fillColor: PERMIT_FILL,
+          fillOpacity: 0.06,
+          interactive: false
+        }).addTo(zoneLayer);
+      } else {
+        L.polygon(pts, {
+          color: BANK_LINE,
+          weight: 1.5,
+          opacity: 0.55,
+          dashArray: '4 6',
+          fillColor: PERMIT_FILL,
+          fillOpacity: 0.06,
+          interactive: false
+        }).addTo(zoneLayer);
+      }
+    });
+
+    // The 50 m limit, offset inward.
+    Shore.permittedAreas().forEach(area => {
+      const pts = area.kind === 'circle'
+        ? shapeLatLngs({ kind: 'circle', lat: area.lat, lon: area.lon, radius: area.radius })
+        : area.coords;
+
+      // A wide translucent pass under the crisp line: readable over pale water
+      // and dark tiles alike, without a hard shadow.
+      L.polygon(pts, {
+        color: LIMIT_LINE,
+        weight: 8,
+        opacity: 0.16,
+        fill: false,
+        lineCap: 'round',
+        lineJoin: 'round',
+        interactive: false
+      }).addTo(zoneLayer);
+
+      L.polygon(pts, {
+        color: LIMIT_LINE,
+        weight: 2.5,
+        opacity: 0.95,
+        fillColor: PERMIT_FILL,
+        fillOpacity: 0.1,
+        lineCap: 'round',
+        lineJoin: 'round',
+        interactive: false
+      })
+        .bindTooltip(`${area.name} · ${limit} m from shore`, { sticky: true })
+        .addTo(zoneLayer);
+    });
 
     zoneLayer.addTo(map);
     return true;
@@ -718,6 +736,8 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.MapModule = MapModule;
 }
+
+
 
 
 

@@ -21,12 +21,14 @@ const Admin = (function() {
     bindPoints();
     bindProviders();
     bindDevices();
+    bindShore();
     bindUsers();
     bindSecurity();
 
     await loadPoints();
     renderProviders();
     renderDevices();
+    renderShoreList();
     syncDetection();
 
   }
@@ -42,6 +44,15 @@ const Admin = (function() {
         });
 
         document.querySelector('.screen__body').scrollTop = 0;
+
+        // Leaflet cannot measure a hidden container, so the shore map is built
+        // the first time its tab is opened.
+        if (btn.dataset.tab === 'shore') {
+          setTimeout(() => {
+            initShoreMap();
+            if (shoreMap) shoreMap.invalidateSize();
+          }, 60);
+        }
       });
     });
   }
@@ -413,6 +424,439 @@ const Admin = (function() {
       (Number(el.max) - Number(el.min))) * 100;
     el.style.setProperty('--fill', pct + '%');
   }
+  // --------------------------------------------------------------- shore
+  //
+  // Hand-drawn shoreline. Three tools: tap a polygon, drop a circle, or drag a
+  // freehand trace. Each finished shape is closed water; the app offsets it
+  // inward by minShoreMetres and that offset is the red line.
+
+  let shoreMap = null;
+  let drawLayer = null;      // the shape being drawn right now
+  let draftLayer = null;     // committed shapes, for reference
+  let draft = [];            // points of the shape in progress
+  let tool = 'polygon';
+  let drawing = false;       // freehand: pointer is down
+  let circleCentre = null;   // circle: first tap
+  let circlePreview = null;
+
+  function initShoreMap() {
+    const host = document.getElementById('shore-map');
+    if (!host || shoreMap) return;
+
+    shoreMap = L.map(host, {
+      zoomControl: true,
+      attributionControl: true
+    }).setView(CONFIG.MAP_CENTER, 13);
+
+    L.tileLayer(CONFIG.TILE_URL, {
+      maxZoom: 19,
+      attribution: CONFIG.TILE_ATTRIBUTION
+    }).addTo(shoreMap);
+
+    drawLayer = L.layerGroup().addTo(shoreMap);
+    draftLayer = L.layerGroup().addTo(shoreMap);
+
+    shoreMap.on('click', e => onMapClick(e.latlng.lat, e.latlng.lng));
+
+    // Freehand needs press / move / release rather than clicks.
+    const el = shoreMap.getContainer();
+    el.addEventListener('pointerdown', e => {
+      if (tool !== 'freehand') return;
+      drawing = true;
+      draft = [];
+      const p = shoreMap.mouseEventToLatLng(e);
+      draft.push([p.lat, p.lng]);
+    });
+    el.addEventListener('pointermove', e => {
+      if (tool !== 'freehand' || !drawing) return;
+      const p = shoreMap.mouseEventToLatLng(e);
+      const last = draft[draft.length - 1];
+      // keep the trace light: only add a point once it has moved
+      if (!last || Shore.haversine(last[0], last[1], p.lat, p.lng) > 8) {
+        draft.push([p.lat, p.lng]);
+        redrawDraft();
+      }
+    });
+    el.addEventListener('pointerup', () => {
+      if (tool !== 'freehand' || !drawing) return;
+      drawing = false;
+      updateDrawUi();
+    });
+
+    renderShoreShapes();
+    setTimeout(() => shoreMap.invalidateSize(), 200);
+  }
+
+  function onMapClick(lat, lon) {
+    if (tool === 'circle') {
+      if (!circleCentre) {
+        circleCentre = { lat, lon };
+        updateDrawUi();
+        redrawDraft();
+        return;
+      }
+
+      // second tap sets the radius
+      const radius = Shore.haversine(circleCentre.lat, circleCentre.lon, lat, lon);
+      if (radius < 10) {
+        UIModule.showToast('That circle is too small', 'warning');
+        return;
+      }
+
+      finishShape({
+        kind: 'circle',
+        name: 'Circle',
+        lat: circleCentre.lat,
+        lon: circleCentre.lon,
+        radius
+      });
+
+      circleCentre = null;
+      redrawDraft();
+      updateDrawUi();
+      return;
+    }
+
+    draft.push([lat, lon]);
+    redrawDraft();
+    updateDrawUi();
+  }
+
+  function redrawDraft() {
+    if (!drawLayer) return;
+    drawLayer.clearLayers();
+
+    if (circleCentre) {
+      L.circleMarker([circleCentre.lat, circleCentre.lon], {
+        radius: 5, color: '#fff', weight: 2,
+        fillColor: '#1FA6D8', fillOpacity: 1
+      }).addTo(drawLayer);
+    }
+
+    if (tool === 'circle') return;
+
+    if (draft.length === 1) {
+      L.circleMarker(draft[0], {
+        radius: 5, color: '#fff', weight: 2,
+        fillColor: '#1FA6D8', fillOpacity: 1
+      }).addTo(drawLayer);
+      return;
+    }
+
+    if (draft.length >= 2) {
+      L.polyline(draft, {
+        color: '#1FA6D8',
+        weight: 3,
+        opacity: 0.95,
+        lineCap: 'round'
+      }).addTo(drawLayer);
+    }
+
+    if (draft.length >= 3) {
+      L.polygon(draft, {
+        color: 'transparent',
+        fillColor: '#1FA6D8',
+        fillOpacity: 0.12,
+        interactive: false
+      }).addTo(drawLayer);
+    }
+  }
+
+  function renderShoreShapes() {
+    if (!draftLayer) return;
+    draftLayer.clearLayers();
+
+    const limit = CONFIG.DEVICES.minShoreMetres;
+
+    Shore.all().forEach(shape => {
+      const pts = shape.kind === 'circle'
+        ? circlePoints(shape.lat, shape.lon, shape.radius)
+        : shape.coords;
+
+      L.polygon(pts, {
+        color: '#7D8C99',
+        weight: 1.5,
+        opacity: 0.6,
+        dashArray: '4 6',
+        fillColor: '#2FA36B',
+        fillOpacity: 0.06,
+        interactive: false
+      }).addTo(draftLayer);
+
+      // the offset, so the consequence is visible while editing
+      const zone = Shore.permittedOf(shape, limit);
+      if (!zone) {
+        L.polyline(pts, { color: '#E5484D', weight: 2, opacity: 0.5, interactive: false })
+          .bindTooltip('Too narrow for a ' + limit + ' m limit', { sticky: true })
+          .addTo(draftLayer);
+        return;
+      }
+
+      const zpts = zone.kind === 'circle'
+        ? circlePoints(zone.lat, zone.lon, zone.radius)
+        : zone.coords;
+
+      L.polygon(zpts, {
+        color: '#E5484D',
+        weight: 2.5,
+        opacity: 0.95,
+        fillColor: '#2FA36B',
+        fillOpacity: 0.1,
+        interactive: false
+      }).addTo(draftLayer);
+    });
+  }
+
+  function circlePoints(lat, lon, radius) {
+    const out = [];
+    const R = 6371000;
+    const dLat = (radius / R) * 180 / Math.PI;
+
+    for (let i = 0; i < 64; i++) {
+      const a = (i / 64) * 2 * Math.PI;
+      out.push([
+        lat + dLat * Math.cos(a),
+        lon + (radius / (R * Math.cos(lat * Math.PI / 180))) * Math.sin(a) * 180 / Math.PI
+      ]);
+    }
+    return out;
+  }
+
+  function updateDrawUi() {
+    const hint = document.getElementById('draw-hint');
+    const finish = document.getElementById('btn-draw-finish');
+    const undo = document.getElementById('btn-draw-undo');
+    const clear = document.getElementById('btn-draw-clear');
+    if (!hint) return;
+
+    const limit = CONFIG.DEVICES.minShoreMetres;
+
+    if (tool === 'circle') {
+      hint.dataset.state = 'idle';
+      hint.textContent = circleCentre
+        ? 'Now tap the edge to set the radius'
+        : 'Tap the centre of the circle';
+      if (finish) finish.disabled = true;
+      if (undo) undo.disabled = !circleCentre;
+      if (clear) clear.disabled = !circleCentre;
+      return;
+    }
+
+    if (tool === 'freehand') {
+      hint.dataset.state = draft.length >= 3 ? 'ok' : 'idle';
+      hint.textContent = draft.length >= 3
+        ? `${draft.length} points traced — press Finish shape`
+        : 'Press and drag to trace the bank';
+      if (finish) finish.disabled = draft.length < 3;
+      if (undo) undo.disabled = draft.length === 0;
+      if (clear) clear.disabled = draft.length === 0;
+      return;
+    }
+
+    hint.dataset.state = draft.length >= 3 ? 'ok' : 'idle';
+    hint.textContent = draft.length === 0
+      ? 'Tap points around the water, then press Finish shape'
+      : draft.length < 3
+        ? `${draft.length} point${draft.length === 1 ? '' : 's'} — at least 3 needed`
+        : `${draft.length} points — press Finish shape`;
+    if (finish) finish.disabled = draft.length < 3;
+    if (undo) undo.disabled = draft.length === 0;
+    if (clear) clear.disabled = draft.length === 0 && !circleCentre;
+  }
+
+  async function finishShape(shape) {
+    const limit = CONFIG.DEVICES.minShoreMetres;
+
+    const zone = Shore.permittedOf(shape, limit);
+    if (!zone) {
+      UIModule.showToast(
+        `That shape is narrower than ${limit} m across — there is no legal water inside it`,
+        'error'
+      );
+      return;
+    }
+
+    const name = await UIModule.prompt(
+      'Name this stretch of water',
+      shape.name || 'Water',
+      { title: 'Name the shape', confirmLabel: 'Save' }
+    );
+
+    if (name === null) return;
+
+    const result = Shore.add(Object.assign({}, shape, { name: name || shape.name }));
+    if (!result.ok) {
+      UIModule.showToast(result.message, 'error');
+      return;
+    }
+
+    UIModule.showToast('Shore added', 'success');
+    renderShoreList();
+    renderShoreShapes();
+    refreshMapZones();
+  }
+
+  function commitDraft() {
+    if (tool === 'circle') return;
+
+    if (draft.length < 3) {
+      UIModule.showToast('A shape needs at least 3 points', 'warning');
+      return;
+    }
+
+    finishShape({
+      kind: tool,
+      name: tool === 'freehand' ? 'Freehand water' : 'Polygon water',
+      coords: draft.slice()
+    });
+
+    draft = [];
+    redrawDraft();
+    updateDrawUi();
+  }
+
+  function renderShoreList() {
+    const host = document.getElementById('shore-list');
+    const empty = document.getElementById('shore-empty');
+    const count = document.getElementById('shore-count');
+    if (!host) return;
+
+    const list = Shore.all();
+    const limit = CONFIG.DEVICES.minShoreMetres;
+
+    if (count) {
+      count.textContent = list.length + (list.length === 1 ? ' shape' : ' shapes');
+    }
+
+    if (!list.length) {
+      host.innerHTML = '';
+      if (empty) empty.hidden = false;
+      return;
+    }
+
+    if (empty) empty.hidden = true;
+
+    host.innerHTML = list.map(shape => {
+      const zone = Shore.permittedOf(shape, limit);
+      const area = shape.kind === 'circle'
+        ? Math.PI * shape.radius * shape.radius
+        : Math.abs(Shore.area(shape.coords)) * 111320 * 111320 *
+          Math.cos(shape.coords[0][0] * Math.PI / 180);
+
+      const kindLabel = Shore.KINDS[shape.kind] || shape.kind;
+
+      return `
+        <article class="shore-item" data-shore="${UIModule.escapeHtml(shape.id)}">
+          <div class="shore-item__head">
+            <span class="shore-item__name">${UIModule.escapeHtml(shape.name)}</span>
+            <span class="shore-item__kind">${UIModule.escapeHtml(kindLabel)}</span>
+          </div>
+
+          <div class="shore-item__meta">
+            <span>${Math.round(area / 10000)} ha</span>
+            <span>${zone ? 'limit drawn' : 'too narrow'}</span>
+          </div>
+
+          <div class="shore-item__actions">
+            <button type="button" class="btn btn--ghost btn--sm" data-shore-zoom="${UIModule.escapeHtml(shape.id)}">
+              Show
+            </button>
+            <button type="button" class="btn btn--danger btn--sm" data-shore-delete="${UIModule.escapeHtml(shape.id)}">
+              Delete
+            </button>
+          </div>
+        </article>`;
+    }).join('');
+
+    host.querySelectorAll('[data-shore-delete]').forEach(btn => {
+      btn.addEventListener('click', () => deleteShore(btn.dataset.shoreDelete));
+    });
+
+    host.querySelectorAll('[data-shore-zoom]').forEach(btn => {
+      btn.addEventListener('click', () => zoomToShape(btn.dataset.shoreZoom));
+    });
+  }
+
+  async function deleteShore(id) {
+    const shape = Shore.get(id);
+    if (!shape) return;
+
+    const ok = await UIModule.confirm(
+      `Delete “${shape.name}”? The 50 m limit for it goes with it.`,
+      { title: 'Delete shape', confirmLabel: 'Delete', danger: true }
+    );
+    if (!ok) return;
+
+    Shore.remove(id);
+    UIModule.showToast('Shape deleted', 'success');
+    renderShoreList();
+    renderShoreShapes();
+    refreshMapZones();
+  }
+
+  function zoomToShape(id) {
+    const shape = Shore.get(id);
+    if (!shape || !shoreMap) return;
+
+    if (shape.kind === 'circle') {
+      shoreMap.fitBounds(
+        L.circle([shape.lat, shape.lon], { radius: shape.radius }).getBounds(),
+        { padding: [30, 30] }
+      );
+      return;
+    }
+
+    shoreMap.fitBounds(L.latLngBounds(shape.coords), { padding: [30, 30] });
+  }
+
+  // The user and patrol maps draw the same shapes, so they need a nudge after
+  // an edit. Admin has its own map; the others pick it up on next load.
+  function refreshMapZones() {
+    if (typeof MapModule === 'undefined' || !MapModule.getMap) return;
+    try { MapModule.toggleZones(true); } catch (err) { /* admin has no zone layer */ }
+  }
+
+  function bindShore() {
+    document.querySelectorAll('[data-tool]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('is-active'));
+        btn.classList.add('is-active');
+
+        tool = btn.dataset.tool;
+        draft = [];
+        circleCentre = null;
+        drawing = false;
+
+        redrawDraft();
+        updateDrawUi();
+      });
+    });
+
+    document.getElementById('btn-draw-finish')?.addEventListener('click', commitDraft);
+    document.getElementById('btn-draw-undo')?.addEventListener('click', () => {
+      if (tool === 'circle') {
+        circleCentre = null;
+      } else {
+        draft.pop();
+      }
+      redrawDraft();
+      updateDrawUi();
+    });
+
+    document.getElementById('btn-draw-clear')?.addEventListener('click', () => {
+      draft = [];
+      circleCentre = null;
+      redrawDraft();
+      updateDrawUi();
+    });
+
+    const limitEl = document.getElementById('shore-limit');
+    if (limitEl) limitEl.textContent = CONFIG.DEVICES.minShoreMetres;
+
+    updateDrawUi();
+    renderShoreList();
+  }
+
   // ------------------------------------------------------------- devices
 
   function renderDevices() {
@@ -711,6 +1155,8 @@ const Admin = (function() {
 
 document.addEventListener('DOMContentLoaded', () => Admin.init());
 window.Admin = Admin;
+
+
 
 
 
