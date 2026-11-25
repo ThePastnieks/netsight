@@ -1,4 +1,4 @@
-﻿// NetSight Water Patrol
+// NetSight Water Patrol
 //
 // The patrol sees every case on a map and in a list, opens one, and moves it
 // along: new → reported → checked → resolved | false alarm.
@@ -36,6 +36,11 @@ const Patrol = (function() {
 
     const map = MapModule.initMap('patrol-map', CONFIG.MAP_CENTER, CONFIG.MAP_ZOOM);
     if (!map) UIModule.showToast('Map failed to load', 'error');
+
+    // Patrol needs the fleet on the map: an alerting buoy is the case.
+    MapModule.renderDevices(Devices.all());
+    MapModule.toggleDeviceLayer(true);
+    MapModule.toggleZones(true);
 
     await loadCases();
     console.log('Water Patrol ready');
@@ -240,4 +245,5 @@ const Patrol = (function() {
 
 document.addEventListener('DOMContentLoaded', () => Patrol.init());
 window.Patrol = Patrol;
+
 

@@ -70,8 +70,6 @@ salt per account) and kept in this browser's `localStorage` under
 > server-side authentication.
 
 ---
-## Signing in
-
 
 > The build number lives in `js/config.js → NETSIGHT_BUILD`. Bump it on every
 > release — the HTML pages append `?v=<build>` to every local asset and purge
@@ -102,6 +100,62 @@ salt per account) and kept in this browser's `localStorage` under
 
 ---
 
+## Buoys (the fleet)
+
+A buoy is a stodere with GPS, battery, temperature, level and a lift sensor. The
+app is the platform that collects what those sensors report — requirement 10 of
+the hardware spec. What the device has to measure, and where the spec is likely
+to disappoint, is in **[docs/HARDWARE.md](docs/HARDWARE.md)**.
+
+| Where | What it shows |
+|---|---|
+| Admin → **Devices** | Every buoy: battery, water temperature, level, light, last report. Alerts at the top, worst first. |
+| User map | Buoy markers on by default, colour by alert level. Tap for details. |
+| Patrol map | The same buoys, plus the permitted-water outlines. |
+| Report screen | A geofence line under the coordinates: which zone, metres from shore, or why the spot is refused. |
+
+### Alerts
+
+| Signal | Threshold | Level |
+|---|---|---|
+| Lifted out of the water | `tilt.lifted` | **danger** |
+| Not reporting | silent > 6 h | **danger** |
+| Battery low | ≤ 20 % (≤ 10 % is danger) | warn |
+| Drifted | > 25 m from where it was registered | warn |
+| Near freezing | < 1 °C | info |
+
+Thresholds live in `CONFIG.DEVICES` in `js/config.js`.
+
+### Geofence
+
+Gear may only be reported inside a permitted water polygon and at least 50 m
+from its edge. Both are in `CONFIG.DEVICES.geofence`. The seeded zones
+(Daugava, Ķīšezers) are **illustrative** — replace them with the real Riga
+water boundary before this means anything legally.
+
+Reporting outside the fence is not blocked outright: the app explains why and
+lets the reporter override, because a prototype that silently eats reports is
+worse than one that asks.
+
+### Getting data in
+
+`netlify/functions/telemetry.js` accepts a device POST:
+
+```json
+{
+  "device_id": "NS-000123",
+  "lat": 56.9690, "lon": 24.0980,
+  "battery": 78, "temperature_c": 4.2, "water_level_cm": 12,
+  "tilt": { "lifted": false, "degrees": 3 },
+  "light_on": true, "signal": -87
+}
+```
+
+It answers with the alerts that report raised. Storage goes to
+`device_telemetry` (`supabase/migrations/002_device_telemetry.sql`); with no
+database configured it validates and echoes, so a buoy can be tested end to end.
+
+---
 ## Detection — where the model plugs in
 
 There is no prompt, no API key and no provider list in the app. There is one
@@ -145,7 +199,8 @@ The client tolerates naming variations (`detected`, `score`, `detections`,
 
 ### Wiring a model in
 
-`netlify/functions/detect.js` ships with a stub. Replace `runModel()` with a call
+`netlify/functions/telemetry.js  Buoy data in
+netlify/functions/detect.js` ships with a stub. Replace `runModel()` with a call
 to a hosted detector, in-function inference, or your own GPU box. The function's
 return value is the only thing the app cares about. Keep secrets in Netlify
 environment variables, never in `js/`.
@@ -162,6 +217,7 @@ either the round-trip time and model name, or exactly what went wrong.
 | Tab | What it does |
 |---|---|
 | **Points** | Every sighting with thumbnail, status, type, confidence, coordinates and age. Filter, sort, delete one, bulk delete, export JSON, delete all. |
+| **Devices** | The buoy fleet: battery, temperature, level, lift alerts. |
 | **AI** | Model endpoint, confidence threshold, connection test, and the reply contract. |
 | **Users** | Every account, its role, and a dropdown to promote or demote it. |
 | **Security** | Change your own password, sign out. |
@@ -177,7 +233,9 @@ login.html                 Sign in / create account — the first screen
 index.html                 User app (map, report, settings)
 patrol.html                Water Patrol (map, cases, settings)
 admin.html                 Admin panel (points, detection, security)
+devices.js                 Buoy fleet: telemetry, alerts, geofence
 reset.html                 One-click cache purge (also removes old service workers)
+HARDWARE.md                Hardware spec read-through: what the device must do
 DETECT.md                  The model contract — read this to build the AI
 manifest.webmanifest       PWA metadata (install prompt, no service worker)
 css/style.css              Design system (tokens → base → components)
@@ -195,6 +253,7 @@ js/
   patrol.js                Water Patrol: map + case table + status changes
   admin.js                 Points, detection config, accounts, password
   app.js                   Wiring and user flows
+netlify/functions/telemetry.js  Buoy data in
 netlify/functions/detect.js The seam: replace runModel() with your model
 data/registry.csv          Registered gear
 supabase/migrations/       Postgres schema for the live backend
@@ -231,6 +290,8 @@ FileReader, fetch, `color-mix()` (graceful fallback), CSS Grid.
 ## License
 
 MIT — prototype for demonstration purposes.
+
+
 
 
 

@@ -11,7 +11,7 @@
 
   <script>
   (function () {
-    var BUILD = '2026.11.25.3';
+    var BUILD = '2026.11.26.1';
     var KEY = 'netsight_build';
     var seen = null;
     try { seen = localStorage.getItem(KEY); } catch (e) {}
@@ -44,10 +44,10 @@
 
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/netsight-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css?v=2026.11.25.3">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.26.1">
 
-  <script src="js/config.js?v=2026.11.25.3"></script>
-  <script src="js/theme.js?v=2026.11.25.3"></script>
+  <script src="js/config.js?v=2026.11.26.1"></script>
+  <script src="js/theme.js?v=2026.11.26.1"></script>
 </head>
 <body data-page="admin">
 
@@ -95,6 +95,7 @@
     <div class="admin-tabs segmented segmented--full" role="tablist">
       <button type="button" class="segment is-active" data-tab="points" role="tab">Points</button>
       <button type="button" class="segment" data-tab="ai" role="tab">AI</button>
+      <button type="button" class="segment" data-tab="devices" role="tab">Devices</button>
       <button type="button" class="segment" data-tab="users" role="tab">Users</button>
       <button type="button" class="segment" data-tab="security" role="tab">Security</button>
     </div>
@@ -247,6 +248,38 @@
 
       </section>
       <!-- ---------------- SECURITY ---------------- -->
+      <!-- ---------------- DEVICES ---------------- -->
+      <section class="admin-pane" data-pane="devices">
+
+        <div class="stats">
+          <div class="stat"><span class="stat__value" id="d-total">0</span><span class="stat__label">Buoys</span></div>
+          <div class="stat stat--ok"><span class="stat__value" id="d-ok">0</span><span class="stat__label">OK</span></div>
+          <div class="stat stat--warn"><span class="stat__value" id="d-warn">0</span><span class="stat__label">Warn</span></div>
+          <div class="stat stat--danger"><span class="stat__value" id="d-danger">0</span><span class="stat__label">Alert</span></div>
+        </div>
+
+        <div id="devices-alerts" class="alerts"></div>
+
+        <div class="card">
+          <header class="card__head">
+            <h2 class="card__title">Fleet</h2>
+            <span class="tag" id="devices-count">0</span>
+          </header>
+          <div class="card__body">
+            <p class="hint">
+              Every registered buoy, its battery, temperature, water level and
+              the last time it reported. Lift a buoy and it shows up here as an
+              alert.
+            </p>
+          </div>
+        </div>
+
+        <div id="devices-list" class="devices"></div>
+
+        <div id="devices-empty" class="empty-state" hidden>
+          <p>No buoys registered</p>
+        </div>
+      </section>
       <!-- ---------------- USERS ---------------- -->
       <section class="admin-pane" data-pane="users">
 
@@ -319,14 +352,18 @@
     </div>
   </div>
 
-  <script src="js/status.js?v=2026.11.25.3"></script>
-  <script src="js/store.js?v=2026.11.25.3"></script>
-  <script src="js/ui.js?v=2026.11.25.3"></script>
-  <script src="js/detection.js?v=2026.11.25.3"></script>
-  <script src="js/auth.js?v=2026.11.25.3"></script>
-  <script src="js/admin.js?v=2026.11.25.3"></script>
+  <script src="js/status.js?v=2026.11.26.1"></script>
+  <script src="js/devices.js?v=2026.11.26.1"></script>
+  <script src="js/store.js?v=2026.11.26.1"></script>
+  <script src="js/ui.js?v=2026.11.26.1"></script>
+  <script src="js/detection.js?v=2026.11.26.1"></script>
+  <script src="js/auth.js?v=2026.11.26.1"></script>
+  <script src="js/admin.js?v=2026.11.26.1"></script>
 </body>
 </html>
+
+
+
 
 
 

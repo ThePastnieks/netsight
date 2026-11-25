@@ -20,11 +20,13 @@ const Admin = (function() {
     bindTabs();
     bindPoints();
     bindProviders();
+    bindDevices();
     bindUsers();
     bindSecurity();
 
     await loadPoints();
     renderProviders();
+    renderDevices();
     syncDetection();
 
   }
@@ -411,6 +413,147 @@ const Admin = (function() {
       (Number(el.max) - Number(el.min))) * 100;
     el.style.setProperty('--fill', pct + '%');
   }
+  // ------------------------------------------------------------- devices
+
+  function renderDevices() {
+    const list = Devices.all();
+    const summary = Devices.summary();
+
+    setText('d-total', summary.total);
+    setText('d-ok', summary.ok);
+    setText('d-warn', summary.warn);
+    setText('d-danger', summary.danger);
+    setText('devices-count', list.length + (list.length === 1 ? ' buoy' : ' buoys'));
+
+    renderAlerts();
+    renderFleet(list);
+  }
+
+  function renderAlerts() {
+    const host = document.getElementById('devices-alerts');
+    if (!host) return;
+
+    const alerts = Devices.alerts();
+
+    if (!alerts.length) {
+      host.innerHTML = '';
+      return;
+    }
+
+    host.innerHTML = alerts.map(a => `
+      <article class="alert" data-level="${a.level}">
+        <span class="alert__dot"></span>
+        <div class="alert__body">
+          <span class="alert__title">${UIModule.escapeHtml(a.title)}</span>
+          <span class="alert__detail">${UIModule.escapeHtml(a.label)} · ${UIModule.escapeHtml(a.detail)}</span>
+        </div>
+      </article>`).join('');
+  }
+
+  function renderFleet(list) {
+    const host = document.getElementById('devices-list');
+    const empty = document.getElementById('devices-empty');
+    if (!host) return;
+
+    if (!list.length) {
+      host.innerHTML = '';
+      if (empty) empty.hidden = false;
+      return;
+    }
+
+    if (empty) empty.hidden = true;
+
+    host.innerHTML = list.map(d => {
+      const level = Devices.worstLevel(d);
+      const age = timeAgo(d.lastSeen);
+      const temp = Number.isFinite(d.temperature_c) ? d.temperature_c + ' °C' : '—';
+      const levelCm = Number.isFinite(d.water_level_cm) ? d.water_level_cm + ' cm' : '—';
+
+      return `
+        <article class="device" data-level="${level}">
+          <div class="device__head">
+            <span class="device__id">${UIModule.escapeHtml(d.id)}</span>
+            <span class="device__age">${UIModule.escapeHtml(age)}</span>
+          </div>
+
+          <div class="device__label">${UIModule.escapeHtml(d.label)}</div>
+
+          <div class="device__grid">
+            <div class="device__stat">
+              <span class="device__stat-value">${Math.round(d.battery)}%</span>
+              <span class="device__stat-label">battery</span>
+            </div>
+            <div class="device__stat">
+              <span class="device__stat-value">${UIModule.escapeHtml(temp)}</span>
+              <span class="device__stat-label">water</span>
+            </div>
+            <div class="device__stat">
+              <span class="device__stat-value">${UIModule.escapeHtml(levelCm)}</span>
+              <span class="device__stat-label">level</span>
+            </div>
+            <div class="device__stat">
+              <span class="device__stat-value">${d.light_on ? 'on' : 'off'}</span>
+              <span class="device__stat-label">light</span>
+            </div>
+          </div>
+
+          <div class="device__foot">
+            <span class="device__nfc">${UIModule.escapeHtml(d.nfc)}</span>
+            <button type="button" class="btn btn--danger btn--sm"
+                    data-device-delete="${UIModule.escapeHtml(d.id)}">Remove</button>
+          </div>
+        </article>`;
+    }).join('');
+
+    host.querySelectorAll('[data-device-delete]').forEach(btn => {
+      btn.addEventListener('click', () => removeDevice(btn.dataset.deviceDelete));
+    });
+  }
+
+  async function removeDevice(id) {
+    const ok = await UIModule.confirm(
+      `Remove buoy ${id} from the fleet? Its history is lost.`,
+      { title: 'Remove buoy', confirmLabel: 'Remove', danger: true }
+    );
+    if (!ok) return;
+
+    if (Devices.remove(id)) {
+      UIModule.showToast('Buoy removed', 'success');
+      renderDevices();
+    } else {
+      UIModule.showToast('Buoy not found', 'error');
+    }
+  }
+
+  function setText(id, value) {
+    const el = document.getElementById(id);
+    if (el) el.textContent = value;
+  }
+
+  function timeAgo(iso) {
+    const then = new Date(iso).getTime();
+    if (!Number.isFinite(then)) return '—';
+
+    const mins = Math.round((Date.now() - then) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return mins + ' min ago';
+
+    const hours = Math.round(mins / 60);
+    if (hours < 24) return hours + ' h ago';
+
+    return Math.round(hours / 24) + ' d ago';
+  }
+
+  function bindDevices() {
+    renderDevices();
+    // Telemetry ages while the panel is open, so refresh the "x min ago" text.
+    setInterval(() => {
+      if (document.querySelector('[data-pane="devices"]')?.classList.contains('is-active')) {
+        renderDevices();
+      }
+    }, 60000);
+  }
+
   // ---------------------------------------------------------------- users
 
   function renderUsers() {
@@ -568,6 +711,7 @@ const Admin = (function() {
 
 document.addEventListener('DOMContentLoaded', () => Admin.init());
 window.Admin = Admin;
+
 
 
 

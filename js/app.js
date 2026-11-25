@@ -123,6 +123,29 @@ const App = (function() {
       UIModule.showToast(e.target.checked ? 'Registry layer on' : 'Registry layer off', 'info');
     });
 
+    // Buoys on the water. On by default — an obstacle you cannot see is the
+    // whole problem this app exists to fix.
+    const deviceToggle = document.getElementById('toggle-devices');
+    if (deviceToggle) {
+      MapModule.renderDevices(Devices.all());
+      MapModule.toggleDeviceLayer(deviceToggle.checked);
+      deviceToggle.addEventListener('change', e => {
+        MapModule.toggleDeviceLayer(e.target.checked);
+        UIModule.showToast(e.target.checked ? 'Buoys shown' : 'Buoys hidden', 'info');
+      });
+    }
+
+    const zoneToggle = document.getElementById('toggle-zones');
+    if (zoneToggle) {
+      zoneToggle.addEventListener('change', e => {
+        MapModule.toggleZones(e.target.checked);
+        UIModule.showToast(
+          e.target.checked ? 'Permitted areas shown' : 'Permitted areas hidden',
+          'info'
+        );
+      });
+    }
+
 
     // Keyboard: R = new report, Esc = back to map
     document.addEventListener('keydown', e => {
@@ -222,11 +245,38 @@ const App = (function() {
   function updateReportLocationDisplay() {
     if (reportLocation) {
       UIModule.updateLocationDisplay(reportLocation.lat, reportLocation.lon, reportLocation.accuracy);
+      updateFenceHint(reportLocation.lat, reportLocation.lon);
       return;
     }
     const last = LocationModule.getLastPosition();
-    if (last) UIModule.updateLocationDisplay(last.lat, last.lon, last.accuracy);
-    else UIModule.updateLocationDisplay(0, 0, null);
+    if (last) {
+      UIModule.updateLocationDisplay(last.lat, last.lon, last.accuracy);
+      updateFenceHint(last.lat, last.lon);
+    } else {
+      UIModule.updateLocationDisplay(0, 0, null);
+      updateFenceHint(null, null);
+    }
+  }
+
+  // Tells the reporter, before they save, whether this spot is inside the
+  // permitted water and far enough from shore.
+  function updateFenceHint(lat, lon) {
+    const hint = document.getElementById('fence-hint');
+    if (!hint) return;
+
+    if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
+      hint.hidden = true;
+      return;
+    }
+
+    const fence = Devices.checkGeofence(lat, lon);
+    const minShore = CONFIG.DEVICES.minShoreMetres;
+
+    hint.hidden = false;
+    hint.dataset.state = fence.allowed ? 'ok' : 'blocked';
+    hint.textContent = fence.allowed
+      ? `${fence.zone} · ${Math.round(fence.shoreDistance)} m from shore (min ${minShore} m)`
+      : fence.reason;
   }
 
   async function handleSubmitReport(e) {
@@ -242,6 +292,19 @@ const App = (function() {
 
       if (!userClass) { UIModule.showToast('Pick the gear type first', 'warning'); return; }
       if (!location) { UIModule.showToast('Set the location first', 'warning'); return; }
+
+      // Gear may only go in permitted water, at least minShoreMetres from shore.
+      const fence = Devices.checkGeofence(location.lat, location.lon);
+      if (!fence.allowed) {
+        const proceed = await UIModule.confirm(
+          fence.reason + '. Report it anyway?',
+          { title: 'Outside the permitted area', confirmLabel: 'Report anyway', danger: true }
+        );
+        if (!proceed) {
+          UIModule.showToast('Report cancelled', 'info');
+          return;
+        }
+      }
 
       const detection = UIModule.getDetectionResult();
       UIModule.showLoading('Saving…');
@@ -437,12 +500,16 @@ const App = (function() {
     showReport,
     showStatusChange,
     isInspector: () => isInspectorMode,
-    getSightings: () => sightings
+    getSightings: () => sightings,
+    setReportLocation
   };
 })();
 
 document.addEventListener('DOMContentLoaded', () => App.init());
 window.App = App;
+
+
+
 
 
 

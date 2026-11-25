@@ -2,7 +2,7 @@
 
 // Build stamp — bump this on every release. It is used to bust browser caches
 // (asset query strings) and to purge stale service workers.
-const NETSIGHT_BUILD = '2026.11.25.3';
+const NETSIGHT_BUILD = '2026.11.26.1';
 
 const CONFIG = {
   BUILD: NETSIGHT_BUILD,
@@ -34,6 +34,42 @@ const CONFIG = {
 
   MATCH_RADIUS_M: 50,
   MAX_PHOTO_MB: 5,
+
+  // --------------------------------------------------------------- devices
+  // The buoy fleet. Thresholds here drive every alert in the app; see
+  // docs/HARDWARE.md for what the physical device has to measure.
+  DEVICES: {
+    storeKey: 'netsight_devices',
+
+    lowBatteryPct: 20,      // <= this shows "swap the pack"
+    offlineHours: 6,        // silent longer than this is an alert
+    driftMetres: 25,        // moved this far from where it was registered
+
+    // Where gear may legally sit. Gear outside every zone, or closer than
+    // minShoreMetres to a zone edge, is refused when reported.
+    // Zones are illustrative — replace with the real Riga water boundary.
+    minShoreMetres: 50,
+    geofence: {
+      zones: [
+        {
+          name: 'Daugava — Riga centre',
+          coords: [
+            [56.9260, 24.1580], [56.9350, 24.1350], [56.9450, 24.1150],
+            [56.9560, 24.0950], [56.9680, 24.0700], [56.9780, 24.0500],
+            [56.9830, 24.0580], [56.9730, 24.0800], [56.9610, 24.1050],
+            [56.9500, 24.1250], [56.9400, 24.1450], [56.9310, 24.1680]
+          ]
+        },
+        {
+          name: 'Ķīšezers',
+          coords: [
+            [56.9780, 24.1050], [56.9850, 24.1250], [57.0000, 24.1400],
+            [57.0080, 24.1350], [57.0020, 24.1100], [56.9900, 24.0980]
+          ]
+        }
+      ]
+    }
+  },
 
   // Map configuration
   MAP_CENTER: [56.9496, 24.1052], // Riga
@@ -102,6 +138,7 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.CONFIG = CONFIG;
 }
+
 
 
 

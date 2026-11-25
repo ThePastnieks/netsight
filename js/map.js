@@ -7,6 +7,8 @@ const MapModule = (function() {
   let map = null;
   let markerLayer = null;
   let registryLayer = null;
+  let deviceLayer = null;
+  let zoneLayer = null;
   let userMarker = null;
 
   let pickerMap = null;
@@ -61,6 +63,8 @@ const MapModule = (function() {
 
       markerLayer = L.layerGroup().addTo(map);
       registryLayer = L.layerGroup();
+      deviceLayer = L.layerGroup();
+      zoneLayer = L.layerGroup();
 
       // Keep tiles crisp after screen changes
       setTimeout(() => map && map.invalidateSize(), 200);
@@ -227,6 +231,110 @@ const MapModule = (function() {
     }
   }
 
+
+  // ----------------------------------------------------------- device layer
+
+  // A buoy marker that stays visible at night: a solid core, a bright ring and
+  // a soft glow. Colour carries the alert level, not the gear type.
+  function deviceIcon(level) {
+    const tone = {
+      ok: '#2FA36B',
+      warn: '#F0920F',
+      danger: '#E5484D',
+      info: '#1FA6D8'
+    }[level] || '#7D8C99';
+
+    return L.divIcon({
+      className: 'device-pin',
+      html:
+        '<span class="device-pin__glow" style="--tone:' + tone + '"></span>' +
+        '<span class="device-pin__core" style="--tone:' + tone + '"></span>',
+      iconSize: [30, 30],
+      iconAnchor: [15, 15],
+      popupAnchor: [0, -16]
+    });
+  }
+
+  function devicePopup(d) {
+    const alerts = (typeof Devices !== 'undefined') ? Devices.evaluate(d) : [];
+    const level = alerts.length
+      ? alerts.reduce((worst, a) => (a.level === 'danger' ? 'danger' : worst), alerts[0].level)
+      : 'ok';
+
+    const rows = alerts.length
+      ? alerts.map(a => '<li class="device-popup__alert" data-level="' + a.level + '">' +
+          UIModule.escapeHtml(a.title) + ' — ' + UIModule.escapeHtml(a.detail) + '</li>').join('')
+      : '<li class="device-popup__ok">Reporting normally</li>';
+
+    return '' +
+      '<div class="device-popup" data-level="' + level + '">' +
+        '<strong class="device-popup__title">' + UIModule.escapeHtml(d.label) + '</strong>' +
+        '<div class="device-popup__meta">' +
+          '<span>' + UIModule.escapeHtml(d.gearType || 'gear') + '</span>' +
+          '<span>' + Math.round(d.battery) + '%</span>' +
+          '<span>' + (Number.isFinite(d.temperature_c) ? d.temperature_c + ' °C' : '—') + '</span>' +
+        '</div>' +
+        '<ul class="device-popup__alerts">' + rows + '</ul>' +
+      '</div>';
+  }
+
+  function renderDevices(devices) {
+    if (!deviceLayer) return;
+    deviceLayer.clearLayers();
+
+    (devices || []).forEach(d => {
+      if (!Number.isFinite(d.lat) || !Number.isFinite(d.lon)) return;
+
+      const level = (typeof Devices !== 'undefined') ? Devices.worstLevel(d) : 'ok';
+
+      L.marker([d.lat, d.lon], {
+        icon: deviceIcon(level),
+        title: d.label,
+        zIndexOffset: 500
+      })
+        .bindPopup(devicePopup(d), { minWidth: 200 })
+        .addTo(deviceLayer);
+    });
+  }
+
+  function toggleDeviceLayer(show) {
+    if (!map || !deviceLayer) return false;
+
+    if (show) deviceLayer.addTo(map);
+    else map.removeLayer(deviceLayer);
+
+    return !!show;
+  }
+
+  // Draws the permitted water zones so a reporter can see the boundary before
+  // they place a point.
+  function toggleZones(show) {
+    if (!map || !zoneLayer) return false;
+
+    zoneLayer.clearLayers();
+
+    if (!show) {
+      map.removeLayer(zoneLayer);
+      return false;
+    }
+
+    const zones = (CONFIG.DEVICES.geofence.zones || []);
+    zones.forEach(zone => {
+      L.polygon(zone.coords, {
+        color: '#1FA6D8',
+        weight: 1.5,
+        dashArray: '6 6',
+        fillColor: '#1FA6D8',
+        fillOpacity: 0.07,
+        interactive: false
+      })
+        .bindTooltip(zone.name, { sticky: true })
+        .addTo(zoneLayer);
+    });
+
+    zoneLayer.addTo(map);
+    return true;
+  }
   // ---------------------------------------------------------- registry layer
 
   async function toggleRegistryLayer(show) {
@@ -339,6 +447,9 @@ const MapModule = (function() {
     focusOn,
     showUserPosition,
     toggleRegistryLayer,
+    renderDevices,
+    toggleDeviceLayer,
+    toggleZones,
     openPicker,
     closePicker,
     confirmPicker
@@ -350,6 +461,9 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.MapModule = MapModule;
 }
+
+
+
 
 
 
