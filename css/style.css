@@ -1759,8 +1759,6 @@
     font-size: 12px;
   }
 
-  .link--muted { color: var(--muted); font-weight: 500; }
-  .link--muted:hover { color: var(--brand); }
 
   .icon-btn--ghost {
     background: transparent;
@@ -2238,3 +2236,51 @@
     color: var(--danger);
   }
 }
+
+/* ===================== NET SPAN (line, not a point) ==================== */
+@layer components {
+
+  .span-row {
+    display: flex;
+    align-items: center;
+    gap: var(--s3);
+    margin-top: var(--s3);
+    padding: var(--s3);
+    border-radius: var(--r-sm);
+    background: var(--surface-2);
+    border: 1px solid var(--border);
+  }
+
+  .span-row__text { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+  .span-row__title { font-size: 13px; font-weight: 650; }
+  .span-row__sub { font-size: 11.5px; color: var(--muted); }
+
+  .span-picker__foot {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s2);
+    padding: var(--s3) var(--s4) calc(var(--s4) + env(safe-area-inset-bottom, 0px));
+    border-top: 1px solid var(--border);
+    background: var(--surface);
+  }
+
+  .span-hint {
+    padding: 6px 10px;
+    border-radius: var(--r-sm);
+    font-size: 12px;
+    font-weight: 600;
+    text-align: center;
+    background: var(--surface-2);
+    color: var(--muted);
+  }
+
+  .span-hint[data-state='ok'] {
+    background: color-mix(in oklab, var(--ok) 12%, transparent);
+    color: var(--ok);
+  }
+
+  /* the line drawn between the two anchors, on the report map */
+  .gear-line { filter: drop-shadow(0 0 3px rgba(47, 163, 107, 0.55)); }
+}
+
+

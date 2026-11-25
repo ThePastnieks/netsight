@@ -22,3 +22,5 @@ Thumbs.db
 dist/
 build/
 *.zip
+# Intermediate: 24 MB tile mask, regenerate with tools/build-mask.py
+tools/water-mask.json

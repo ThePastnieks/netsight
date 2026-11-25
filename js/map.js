@@ -24,7 +24,7 @@ const MapModule = (function() {
   // Geofence palette. Red is the 50 m limit, green is gear on the water.
   const LIMIT_LINE = '#E5484D';
   const PERMIT_FILL = '#2FA36B';
-  const BANK_LINE = '#7D8C99';
+  const PERMIT_FILL_SOFT = 'rgba(47, 163, 107, 0.14)';
   const GEAR_LINE = '#2FA36B';
   const FILTER_LABELS = {
     all: 'All sightings',
@@ -163,6 +163,24 @@ const MapModule = (function() {
     }
   }
 
+  // A sighting that carries a span gets its line drawn as well as its pin.
+  function renderSpans(sightings) {
+    if (!markerLayer) return;
+
+    (sightings || []).forEach(s => {
+      if (!Array.isArray(s.span) || s.span.length !== 2) return;
+
+      L.polyline(s.span, {
+        color: GEAR_LINE,
+        weight: 3,
+        opacity: 0.85,
+        lineCap: 'round',
+        className: 'gear-line',
+        interactive: false
+      }).addTo(markerLayer);
+    });
+  }
+
   function renderSightings(sightings) {
     allSightings = Array.isArray(sightings) ? sightings.slice() : [];
     applyFilter();
@@ -173,6 +191,7 @@ const MapModule = (function() {
 
     if (markerLayer) {
       markerLayer.clearLayers();
+      renderSpans(filteredSightings);
       filteredSightings.forEach(addMarker);
     }
 
@@ -336,6 +355,66 @@ const MapModule = (function() {
 
   // Draws the permitted water: the bank itself as a hairline, the 50 m limit as
   // the red line, and a soft fill for the area you may actually use.
+  // Paints the permitted water from the grid: a soft green wash over the area
+  // you may use, and the 50 m limit as a red line along its edge.
+  //
+  // Drawn into a canvas at 3 px per cell, then handed to Leaflet as one image
+  // overlay. That keeps it a single layer however many cells there are, and the
+  // browser's own smoothing turns the cell steps into a clean edge.
+  const ZONE_SCALE = 3;
+
+  function zoneCanvas() {
+    const info = Devices.gridInfo();
+    if (!info) return null;
+
+    const cells = Devices.permittedCells();
+    if (!cells.length) return null;
+
+    const w = info.cols * ZONE_SCALE;
+    const h = info.rows * ZONE_SCALE;
+
+    const canvas = document.createElement('canvas');
+    canvas.width = w;
+    canvas.height = h;
+
+    const ctx = canvas.getContext('2d');
+    const at = (r, c) => c >= 0 && c < info.cols && r >= 0 && r < info.rows
+      ? Devices.isPermitted(
+          info.area.minLat + (r + 0.5) * ((info.area.maxLat - info.area.minLat) / info.rows),
+          info.area.minLon + (c + 0.5) * ((info.area.maxLon - info.area.minLon) / info.cols))
+      : false;
+
+    // 1. the wash
+    ctx.fillStyle = PERMIT_FILL_SOFT;
+    cells.forEach(run => {
+      ctx.fillRect(run.c0 * ZONE_SCALE, run.r * ZONE_SCALE,
+        (run.c1 - run.c0 + 1) * ZONE_SCALE, ZONE_SCALE);
+    });
+
+    // 2. the limit: every permitted cell that touches a non-permitted one
+    ctx.fillStyle = LIMIT_LINE;
+    const t = ZONE_SCALE;
+
+    cells.forEach(run => {
+      for (let c = run.c0; c <= run.c1; c++) {
+        const edge = !at(run.r - 1, c) || !at(run.r + 1, c)
+          || !at(run.r, c - 1) || !at(run.r, c + 1);
+
+        if (!edge) continue;
+
+        // draw the cell's outline on the sides that face out, so the line is
+        // one cell thick rather than a filled band
+        if (!at(run.r - 1, c)) ctx.fillRect(c * t, run.r * t, t, t * 0.5);
+        if (!at(run.r + 1, c)) ctx.fillRect(c * t, run.r * t + t * 0.5, t, t * 0.5);
+        if (!at(run.r, c - 1)) ctx.fillRect(c * t, run.r * t, t * 0.5, t);
+        if (!at(run.r, c + 1)) ctx.fillRect(c * t + t * 0.5, run.r * t, t * 0.5, t);
+      }
+    });
+
+    return { canvas, bounds: [[info.area.minLat, info.area.minLon],
+                             [info.area.maxLat, info.area.maxLon]] };
+  }
+
   function toggleZones(show) {
     if (!map || !zoneLayer) return false;
 
@@ -346,51 +425,16 @@ const MapModule = (function() {
       return false;
     }
 
-    if (typeof Devices === 'undefined') return false;
+    if (typeof Devices === 'undefined' || !Devices.gridReady()) return false;
 
-    Devices.permittedAreas().forEach(area => {
-      // The bank — what the red line is measured from.
-      L.polygon(area.shore, {
-        color: BANK_LINE,
-        weight: 1,
-        opacity: 0.5,
-        dashArray: '3 5',
-        fill: false,
-        interactive: false
-      }).addTo(zoneLayer);
+    const built = zoneCanvas();
+    if (!built) return false;
 
-      // The permitted area: inside the 50 m limit.
-      L.polygon(area.coords, {
-        color: 'transparent',
-        fillColor: PERMIT_FILL,
-        fillOpacity: 0.1,
-        interactive: false
-      }).addTo(zoneLayer);
-
-      // A wider, translucent pass under the line gives it weight without a
-      // hard shadow, so it stays readable over pale water and dark tiles alike.
-      L.polygon(area.coords, {
-        color: LIMIT_LINE,
-        weight: 7,
-        opacity: 0.16,
-        fill: false,
-        lineCap: 'round',
-        lineJoin: 'round',
-        interactive: false
-      }).addTo(zoneLayer);
-
-      L.polygon(area.coords, {
-        color: LIMIT_LINE,
-        weight: 2.5,
-        opacity: 0.9,
-        fill: false,
-        lineCap: 'round',
-        lineJoin: 'round',
-        interactive: false
-      })
-        .bindTooltip(area.name + ' · 50 m from shore', { sticky: true })
-        .addTo(zoneLayer);
-    });
+    L.imageOverlay(built.canvas.toDataURL('image/png'), built.bounds, {
+      opacity: 1,
+      interactive: false,
+      className: 'zone-overlay'
+    }).addTo(zoneLayer);
 
     zoneLayer.addTo(map);
     return true;
@@ -430,6 +474,154 @@ const MapModule = (function() {
     return true;
   }
 
+  // ------------------------------------------------------------ net drawing
+  //
+  // A net is not a point. This lets the reporter put down two anchors and see
+  // the line between them, which is what a net actually is on the water.
+
+  let spanMap = null;
+  let spanLine = null;
+  let spanMarkers = [];
+  let spanPoints = [];
+  let spanCallback = null;
+
+  function openSpanPicker(onConfirm, initial) {
+    const modal = document.getElementById('span-picker-modal');
+    if (!modal) {
+      console.error('Span picker modal not found');
+      return;
+    }
+
+    spanCallback = onConfirm || null;
+    spanPoints = [];
+    clearSpan();
+
+    const start = initial || LocationModule.getLastPosition() || {
+      lat: CONFIG.MAP_CENTER[0],
+      lon: CONFIG.MAP_CENTER[1]
+    };
+
+    modal.hidden = false;
+    void modal.offsetHeight;
+    modal.classList.add('sheet--visible');
+
+    // The modal has to be laid out before Leaflet can measure the container,
+    // otherwise the map is created 0x0 and never shows a tile.
+    setTimeout(() => {
+      if (!spanMap) {
+        spanMap = L.map('span-picker-map').setView([start.lat, start.lon], 15);
+        L.tileLayer(CONFIG.TILE_URL, {
+          maxZoom: 19,
+          attribution: CONFIG.TILE_ATTRIBUTION
+        }).addTo(spanMap);
+
+        spanMap.on('click', e => addSpanPoint(e.latlng.lat, e.latlng.lng));
+      } else {
+        spanMap.setView([start.lat, start.lon], 15);
+        spanMap.invalidateSize();
+      }
+
+      clearSpan();
+    }, 60);
+
+    updateSpanUi();
+  }
+
+  function addSpanPoint(lat, lon) {
+    if (!spanMap) return;
+
+    // Two points is a net. A third starts a new one, so a mis-tap is one tap to
+    // fix rather than a modal to reopen.
+    if (spanPoints.length >= 2) clearSpan();
+
+    spanPoints.push({ lat, lon });
+
+    const marker = L.circleMarker([lat, lon], {
+      radius: 7,
+      color: '#fff',
+      weight: 2,
+      fillColor: GEAR_LINE,
+      fillOpacity: 1
+    }).addTo(spanMap);
+
+    spanMarkers.push(marker);
+
+    if (spanPoints.length === 2) {
+      const [a, b] = spanPoints;
+      spanLine = L.polyline([[a.lat, a.lon], [b.lat, b.lon]], {
+        color: GEAR_LINE,
+        weight: 4,
+        opacity: 0.95,
+        lineCap: 'round'
+      }).addTo(spanMap);
+
+      const metres = Devices.haversine(a.lat, a.lon, b.lat, b.lon);
+      spanMap.fitBounds([[a.lat, a.lon], [b.lat, b.lon]], { padding: [50, 50] });
+      updateSpanUi(metres);
+      return;
+    }
+
+    updateSpanUi();
+  }
+
+  function clearSpan() {
+    if (!spanMap) return;
+
+    spanMarkers.forEach(m => spanMap.removeLayer(m));
+    spanMarkers = [];
+
+    if (spanLine) {
+      spanMap.removeLayer(spanLine);
+      spanLine = null;
+    }
+
+    spanPoints = [];
+    updateSpanUi();
+  }
+
+  function updateSpanUi(metres) {
+    const hint = document.getElementById('span-hint');
+    const btn = document.getElementById('btn-span-confirm');
+    const undo = document.getElementById('btn-span-undo');
+
+    if (hint) {
+      if (spanPoints.length === 0) {
+        hint.textContent = 'Tap the map where the net starts';
+        hint.dataset.state = 'idle';
+      } else if (spanPoints.length === 1) {
+        hint.textContent = 'Now tap where it ends';
+        hint.dataset.state = 'idle';
+      } else {
+        const m = metres !== undefined ? metres
+          : Devices.haversine(spanPoints[0].lat, spanPoints[0].lon,
+                              spanPoints[1].lat, spanPoints[1].lon);
+        hint.textContent = Math.round(m) + ' m between the two anchors';
+        hint.dataset.state = 'ok';
+      }
+    }
+
+    if (btn) btn.disabled = spanPoints.length < 2;
+    if (undo) undo.disabled = spanPoints.length === 0;
+  }
+
+  function confirmSpan() {
+    if (spanPoints.length < 2) return;
+
+    const cb = spanCallback;
+    const points = spanPoints.map(p => [p.lat, p.lon]);
+
+    spanCallback = null;
+    closeSpanPicker();
+
+    if (cb) cb(points);
+  }
+
+  function closeSpanPicker() {
+    const modal = document.getElementById('span-picker-modal');
+    if (!modal) return;
+    modal.classList.remove('sheet--visible');
+    modal.hidden = true;
+  }
   // ---------------------------------------------------------- location picker
 
   function openPicker(onConfirm, initial) {
@@ -512,7 +704,12 @@ const MapModule = (function() {
     toggleZones,
     openPicker,
     closePicker,
-    confirmPicker
+    confirmPicker,
+    getSpanMap: () => spanMap,
+    openSpanPicker,
+    closeSpanPicker,
+    confirmSpan,
+    clearSpan
   };
 })();
 
@@ -521,6 +718,16 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.MapModule = MapModule;
 }
+
+
+
+
+
+
+
+
+
+
 
 
 

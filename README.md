@@ -115,20 +115,13 @@ to disappoint, is in **[docs/HARDWARE.md](docs/HARDWARE.md)**.
 
 ### The 50 m line
 
-The map draws three things over the water:
+The map draws two things over the water:
 
-* a **dotted grey hairline** — the bank, the real shoreline
-* a **soft green fill** — the water you may legally use
-* a **red line** — the limit, exactly 50 m inside the bank
+* a **soft green wash** — the water you may legally use
+* a **red line** — the 50 m limit, drawn along the edge of that wash
 
-The red line is not decoration. `Devices.permittedAreas()` offsets the shoreline
-polygon inward by `minShoreMetres` with a miter offset, and `checkGeofence()`
-tests the same polygon the line draws. What you see is what decides.
-
-Gear that spans a line — nets and traps — carries a `span`: the two anchors it is
-strung between. The map draws that as the green gear line, with a dot at each
-anchor.
-
+The red line is not decoration. `Devices.checkGeofence()` tests the same cells
+the line is painted from, so the boundary you see is the boundary that decides.
 ### Alerts
 
 | Signal | Threshold | Level |
@@ -141,18 +134,46 @@ anchor.
 
 Thresholds live in `CONFIG.DEVICES` in `js/config.js`.
 
-### Shoreline data
+### Where the water comes from
 
-The shore outlines in `CONFIG.DEVICES.geofence.shorelines` are hand-traced
-approximations of the Riga centre waterfront — good enough to build against, not
-survey data. Replace them with the municipal water boundary before anything here
-is legally binding. Everything else follows from them automatically: change the
-outline, and the red line, the fill and the report check all move with it.
+The 50 m limit is not hand-drawn. It is measured from the water the map itself
+draws:
 
-Reporting outside the fence is not blocked outright: the app explains why and
-lets the reporter override, because a prototype that silently eats reports is
-worse than one that asks.
+1. `tools/build-mask.py` reads the OpenStreetMap raster tiles at z15 and marks
+   every pixel painted as water.
+2. `tools/build-water.cjs` downsamples that to 20 m cells, closes the seams,
+   runs a chamfer distance transform, and keeps every water cell at least 50 m
+   from land.
+3. `data/water.json` ships both grids, packed as base64 bits (63 KB).
 
+`Devices.checkGeofence()` reads those cells, and `MapModule.toggleZones()` paints
+the same cells as the red line. One grid, so the line and the rule cannot
+disagree.
+
+The first attempt traced OSM *polygons* instead. It failed: through the centre
+OSM does not describe the Daugava as one closed area — `is_in()` at the middle of
+the river returns a park — so every offset ran across dry land. The raster has no
+such hole.
+
+Regenerate after a map data change:
+
+```
+python tools/build-mask.py      # ~192 tiles, writes tools/water-mask.json
+node tools/build-water.cjs      # writes data/water.json
+```
+
+`tools/water-mask.json` is a 24 MB intermediate and is gitignored.
+
+### Nets are a line
+
+A net is not a point. For `net` and `trap` the report screen shows a **Net line**
+control: tap where it starts, tap where it ends, and the app draws the line,
+shows the distance and stores both anchors as `span` on the sighting. The map
+draws that span as a green line with a dot at each end.
+
+`span` is client-side for now — `store.js` strips it before a Supabase insert
+because the column does not exist yet. Add it to `sightings` to make it
+persistent across devices.
 ### Getting data in
 
 `netlify/functions/telemetry.js` accepts a device POST:
@@ -249,7 +270,10 @@ login.html                 Sign in / create account — the first screen
 index.html                 User app (map, report, settings)
 patrol.html                Water Patrol (map, cases, settings)
 admin.html                 Admin panel (points, detection, security)
-devices.js                 Buoy fleet: telemetry, alerts, geofence
+devices.js                 Buoy fleet, alerts, water grid, geofence
+tools/build-mask.py        Tiles -> water mask
+tools/build-water.cjs      Mask -> data/water.json
+                Buoy fleet: telemetry, alerts, geofence
 HARDWARE.md                Hardware spec read-through: what the device must do
 DETECT.md                  The model contract — read this to build the AI
 manifest.webmanifest       PWA metadata (install prompt, no service worker)
@@ -270,6 +294,7 @@ js/
   app.js                   Wiring and user flows
 netlify/functions/telemetry.js  Buoy data in
 netlify/functions/detect.js The seam: replace runModel() with your model
+data/water.json              Water grids: 20 m cells, water + permitted
 data/registry.csv          Registered gear
 supabase/migrations/       Postgres schema for the live backend
 ```
@@ -305,6 +330,8 @@ FileReader, fetch, `color-mix()` (graceful fallback), CSS Grid.
 ## License
 
 MIT — prototype for demonstration purposes.
+
+
 
 
 

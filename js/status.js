@@ -89,6 +89,22 @@ const StatusModule = (function() {
   }
 
   // Validate and normalise a sighting before it is stored
+  // A net is drawn as two anchors. Anything else has no span.
+  function normalizeSpan(span) {
+    if (!Array.isArray(span) || span.length !== 2) return null;
+
+    const out = [];
+    for (const p of span) {
+      if (!Array.isArray(p) || p.length !== 2) return null;
+      const lat = Number(p[0]);
+      const lon = Number(p[1]);
+      if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
+      if (Math.abs(lat) > 90 || Math.abs(lon) > 180) return null;
+      out.push([lat, lon]);
+    }
+
+    return out;
+  }
   function validateSighting(data) {
     const errors = [];
 
@@ -131,7 +147,8 @@ const StatusModule = (function() {
         registry_match: !!data.registry_match,
         status: isStatus(data.status) ? data.status : 'new',
         report_reason: data.report_reason || null,
-        note: (data.note || '').slice(0, 500)
+        note: (data.note || '').slice(0, 500),
+        span: normalizeSpan(data.span)
       }
     };
   }
@@ -158,5 +175,6 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.StatusModule = StatusModule;
 }
+
 
 

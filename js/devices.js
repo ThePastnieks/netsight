@@ -257,203 +257,234 @@ const Devices = (function() {
 
   // -------------------------------------------------------------- geofence
   //
-  // The permitted area is the shoreline polygon pushed inward by
-  // CFG.minShoreMetres. The map draws that offset polygon as the red line, and
-  // checkGeofence() asks the same question the line draws: is the point inside
-  // it? One geometry, one answer — the boundary you see is the boundary that
-  // decides.
-
-  let permittedCache = null;
-
-  function shorelines() {
-    return CFG.geofence.shorelines || [];
-  }
-
-  // The offset polygons, computed once.
-  function permittedAreas() {
-    if (permittedCache) return permittedCache;
-
-    permittedCache = shorelines()
-      .map(zone => ({
-        name: zone.name,
-        shore: zone.coords,
-        coords: offsetInward(zone.coords, CFG.minShoreMetres)
-      }))
-      .filter(zone => zone.coords.length >= 3);
-
-    return permittedCache;
-  }
-
-  // Pushes every vertex of a polygon toward its interior by `metres`.
+  // Water is not guessed and not hand-traced. data/water.json holds a 20 m grid
+  // built by sampling the OpenStreetMap raster tiles — the same water the map
+  // draws — and marking every water cell that is at least 50 m from land.
   //
-  // Works in a local metre plane so a metre is a metre, uses a miter offset at
-  // each corner, and clamps very sharp corners so they cannot shoot to
-  // infinity. Good enough for a river bank; not a general-purpose clipper.
-  function offsetInward(coords, metres) {
-    if (!Array.isArray(coords) || coords.length < 3) return [];
+  // So the red line on the map and the check that refuses a report read the
+  // same cells. There is no way for them to disagree.
 
-    const latRef = coords.reduce((sum, c) => sum + c[0], 0) / coords.length;
-    const mPerLat = 111320;
-    const mPerLon = 111320 * Math.cos(latRef * Math.PI / 180);
+  const WATER_URL = 'data/water.json';
+  let waterGrid = null;      // { area, cols, rows, dLat, dLon, water, permitted }
+  let waterPromise = null;
 
-    const pts = coords.map(c => ({ x: c[1] * mPerLon, y: c[0] * mPerLat }));
-
-    // Shoelace: positive area means counterclockwise, so the interior sits to
-    // the left of travel and the inward normal is (-dy, dx).
-    let area = 0;
-    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
-      area += pts[j].x * pts[i].y - pts[i].x * pts[j].y;
+  function unpackBits(b64, length) {
+    const bin = atob(b64);
+    const out = new Uint8Array(length);
+    for (let i = 0; i < length; i++) {
+      out[i] = (bin.charCodeAt(i >> 3) >> (i & 7)) & 1;
     }
-    const flip = area >= 0 ? 1 : -1;
+    return out;
+  }
 
-    const n = pts.length;
-    const out = [];
+  // Loads the grid once. Safe to call from anywhere; resolves immediately after.
+  function loadWater() {
+    if (waterGrid) return Promise.resolve(waterGrid);
+    if (waterPromise) return waterPromise;
 
-    for (let i = 0; i < n; i++) {
-      const prev = pts[(i - 1 + n) % n];
-      const cur = pts[i];
-      const next = pts[(i + 1) % n];
+    waterPromise = fetch(WATER_URL, { cache: 'no-cache' })
+      .then(res => {
+        if (!res.ok) throw new Error('water grid: HTTP ' + res.status);
+        return res.json();
+      })
+      .then(data => {
+        const area = data.area;
+        const midLat = (area.minLat + area.maxLat) / 2;
 
-      const a = inwardNormal(prev, cur, flip);
-      const b = inwardNormal(cur, next, flip);
+        waterGrid = {
+          area,
+          cols: data.cols,
+          rows: data.rows,
+          cellMetres: data.cellMetres,
+          minShoreMetres: data.minShoreMetres,
+          dLat: (area.maxLat - area.minLat) / data.rows,
+          dLon: (area.maxLon - area.minLon) / data.cols,
+          water: unpackBits(data.water, data.cols * data.rows),
+          permitted: unpackBits(data.permitted, data.cols * data.rows),
+          midLat
+        };
 
-      let bx = a.x + b.x;
-      let by = a.y + b.y;
-      const len = Math.hypot(bx, by);
+        return waterGrid;
+      })
+      .catch(err => {
+        console.warn('Could not load the water grid:', err);
+        waterPromise = null;
+        return null;
+      });
 
-      if (len < 1e-9) {
-        out.push(cur);
-        continue;
+    return waterPromise;
+  }
+
+  function gridReady() {
+    return !!waterGrid;
+  }
+
+  function cellOf(lat, lon) {
+    if (!waterGrid) return null;
+
+    const c = Math.floor((lon - waterGrid.area.minLon) / waterGrid.dLon);
+    const r = Math.floor((lat - waterGrid.area.minLat) / waterGrid.dLat);
+
+    if (r < 0 || r >= waterGrid.rows || c < 0 || c >= waterGrid.cols) return null;
+    return { r, c, i: r * waterGrid.cols + c };
+  }
+
+  function isWater(lat, lon) {
+    const cell = cellOf(lat, lon);
+    return cell ? waterGrid.water[cell.i] === 1 : false;
+  }
+
+  function isPermitted(lat, lon) {
+    const cell = cellOf(lat, lon);
+    return cell ? waterGrid.permitted[cell.i] === 1 : false;
+  }
+
+  // Distance in metres to the nearest land, capped at maxMetres. Walks outward
+  // in rings; the grid is 20 m so 500 m is 25 rings and still instant.
+  function distanceToLand(lat, lon, maxMetres) {
+    if (!waterGrid) return null;
+
+    const cap = maxMetres || 600;
+    const cell = cellOf(lat, lon);
+    if (!cell) return null;
+
+    const { cols, rows, water, cellMetres } = waterGrid;
+    const maxRing = Math.ceil(cap / cellMetres);
+
+    if (water[cell.i] === 0) return 0;
+
+    for (let ring = 1; ring <= maxRing; ring++) {
+      let touchedLand = false;
+
+      for (let dr = -ring; dr <= ring && !touchedLand; dr++) {
+        for (let dc = -ring; dc <= ring; dc++) {
+          if (Math.abs(dr) !== ring && Math.abs(dc) !== ring) continue;
+
+          const rr = cell.r + dr, cc = cell.c + dc;
+          // off the grid counts as land: the edge of the data is not water we
+          // can vouch for
+          if (rr < 0 || rr >= rows || cc < 0 || cc >= cols) {
+            touchedLand = true;
+            break;
+          }
+          if (water[rr * cols + cc] === 0) {
+            touchedLand = true;
+            break;
+          }
+        }
       }
 
-      bx /= len;
-      by /= len;
-
-      const cos = bx * a.x + by * a.y;
-      // A hairpin corner would need an enormous miter; cap it.
-      const scale = cos < 0.25 ? 4 : 1 / cos;
-
-      out.push({ x: cur.x + bx * metres * scale, y: cur.y + by * metres * scale });
+      if (touchedLand) return ring * cellMetres;
     }
 
-    return out.map(p => [p.y / mPerLat, p.x / mPerLon]);
+    return cap;
   }
 
-  function inwardNormal(a, b, flip) {
-    let dx = b.x - a.x;
-    let dy = b.y - a.y;
-    const len = Math.hypot(dx, dy) || 1;
-    dx /= len;
-    dy /= len;
-    return { x: -dy * flip, y: dx * flip };
-  }
-
-  // Is this spot inside the permitted water? Reports the zone and the real
-  // distance to the bank either way, so the message can say why.
+  // The one question the app asks: may gear go here?
   function checkGeofence(lat, lon) {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
       return { allowed: false, inside: false, shoreDistance: null, reason: 'No coordinates' };
     }
 
-    const areas = permittedAreas();
-
-    if (!areas.length) {
-      return {
-        allowed: true, inside: true, shoreDistance: null,
-        reason: 'No shoreline configured'
-      };
-    }
-
-    let onWater = false;
-    let nearest = null;
-
-    for (const area of areas) {
-      if (!pointInPolygon(lat, lon, area.shore)) continue;
-
-      onWater = true;
-      const shore = distanceToPolygonEdge(lat, lon, area.shore);
-
-      if (nearest === null || shore > nearest.shoreDistance) {
-        nearest = { name: area.name, shoreDistance: shore };
-      }
-    }
-
-    if (!onWater) {
-      return {
-        allowed: false, inside: false, shoreDistance: null,
-        reason: 'Outside the permitted water area'
-      };
-    }
-
-    const permitted = areas.some(area => pointInPolygon(lat, lon, area.coords));
-
-    if (!permitted) {
+    if (!waterGrid) {
       return {
         allowed: false,
+        inside: false,
+        shoreDistance: null,
+        reason: 'Water data is still loading'
+      };
+    }
+
+    if (!isWater(lat, lon)) {
+      return {
+        allowed: false,
+        inside: false,
+        shoreDistance: 0,
+        reason: 'Not on water'
+      };
+    }
+
+    const shore = distanceToLand(lat, lon, 600);
+    const min = CFG.minShoreMetres;
+
+    if (isPermitted(lat, lon)) {
+      return {
+        allowed: true,
         inside: true,
-        zone: nearest.name,
-        shoreDistance: nearest.shoreDistance,
-        reason: `${Math.round(nearest.shoreDistance)} m from shore — at least ` +
-                `${CFG.minShoreMetres} m required`
+        shoreDistance: shore,
+        reason: `${Math.round(shore)} m from shore`
       };
     }
 
     return {
-      allowed: true,
+      allowed: false,
       inside: true,
-      zone: nearest.name,
-      shoreDistance: nearest.shoreDistance,
-      reason: `${Math.round(nearest.shoreDistance)} m from shore`
+      shoreDistance: shore,
+      reason: `${Math.round(shore)} m from shore — at least ${min} m required`
     };
   }
 
-  function pointInPolygon(lat, lon, coords) {
-    let inside = false;
+  // The permitted shape, as cells, for the map to paint. Returns a run-length
+  // encoded list so the map can build it without holding the whole grid.
+  function permittedCells() {
+    if (!waterGrid) return [];
 
-    for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
-      const yi = coords[i][0], xi = coords[i][1];
-      const yj = coords[j][0], xj = coords[j][1];
+    const out = [];
+    const { cols, rows, permitted } = waterGrid;
 
-      const crosses = (yi > lat) !== (yj > lat) &&
-        lon < ((xj - xi) * (lat - yi)) / (yj - yi) + xi;
+    for (let r = 0; r < rows; r++) {
+      let runStart = -1;
 
-      if (crosses) inside = !inside;
+      for (let c = 0; c <= cols; c++) {
+        const on = c < cols && permitted[r * cols + c] === 1;
+
+        if (on && runStart === -1) runStart = c;
+        else if (!on && runStart !== -1) {
+          out.push({ r, c0: runStart, c1: c - 1 });
+          runStart = -1;
+        }
+      }
     }
 
-    return inside;
+    return out;
   }
 
-  // Shortest distance in metres from a point to the polygon boundary.
-  function distanceToPolygonEdge(lat, lon, coords) {
-    let min = Infinity;
+  // Water cells too, so the map can show the river itself rather than only the
+  // band you may use.
+  function waterCells() {
+    if (!waterGrid) return [];
 
-    for (let i = 0, j = coords.length - 1; i < coords.length; j = i++) {
-      const d = distanceToSegment(lat, lon, coords[j][0], coords[j][1], coords[i][0], coords[i][1]);
-      if (d < min) min = d;
+    const out = [];
+    const { cols, rows, water } = waterGrid;
+
+    for (let r = 0; r < rows; r++) {
+      let runStart = -1;
+
+      for (let c = 0; c <= cols; c++) {
+        const on = c < cols && water[r * cols + c] === 1;
+
+        if (on && runStart === -1) runStart = c;
+        else if (!on && runStart !== -1) {
+          out.push({ r, c0: runStart, c1: c - 1 });
+          runStart = -1;
+        }
+      }
     }
 
-    return Number.isFinite(min) ? min : 0;
+    return out;
   }
 
-  // Point-to-segment distance, good enough at city scale.
-  function distanceToSegment(pLat, pLon, aLat, aLon, bLat, bLon) {
-    const latRef = pLat * Math.PI / 180;
-    const mPerDegLat = 111320;
-    const mPerDegLon = 111320 * Math.cos(latRef);
-
-    const px = (pLon - aLon) * mPerDegLon;
-    const py = (pLat - aLat) * mPerDegLat;
-    const bx = (bLon - aLon) * mPerDegLon;
-    const by = (bLat - aLat) * mPerDegLat;
-
-    const len2 = bx * bx + by * by;
-    if (len2 === 0) return Math.hypot(px, py);
-
-    let t = (px * bx + py * by) / len2;
-    t = Math.max(0, Math.min(1, t));
-
-    return Math.hypot(px - t * bx, py - t * by);
+  function gridInfo() {
+    if (!waterGrid) return null;
+    return {
+      area: waterGrid.area,
+      cols: waterGrid.cols,
+      rows: waterGrid.rows,
+      cellMetres: waterGrid.cellMetres,
+      minShoreMetres: waterGrid.minShoreMetres
+    };
   }
+
   function haversine(lat1, lon1, lat2, lon2) {
     const R = 6371000;
     const toRad = d => d * Math.PI / 180;
@@ -501,9 +532,14 @@ const Devices = (function() {
     summary,
     worstLevel,
     checkGeofence,
-    permittedAreas,
-    offsetInward,
-    distanceToPolygonEdge,
+    loadWater,
+    gridReady,
+    isWater,
+    isPermitted,
+    distanceToLand,
+    permittedCells,
+    waterCells,
+    gridInfo,
     applyTelemetry,
     haversine
   };
@@ -514,5 +550,6 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.Devices = Devices;
 }
+
 
 

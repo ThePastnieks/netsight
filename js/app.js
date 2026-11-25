@@ -8,6 +8,7 @@ const App = (function() {
   let isInspectorMode = false;
   let unsubRealtime = null;
   let reportLocation = null;
+  let reportSpan = null;   // [[lat,lon],[lat,lon]] for nets and traps
   let detecting = false;
 
   // ------------------------------------------------------------------ init
@@ -30,6 +31,7 @@ const App = (function() {
     syncDetectChrome();
 
     await RegistryModule.loadRegistry();
+    await Devices.loadWater();
 
     const map = MapModule.initMap('map', CONFIG.MAP_CENTER, CONFIG.MAP_ZOOM);
     if (!map) UIModule.showToast('Map failed to load', 'error');
@@ -115,7 +117,19 @@ const App = (function() {
     document.getElementById('btn-map-picker-cancel')?.addEventListener('click', () => MapModule.closePicker());
     document.getElementById('btn-map-picker-confirm')?.addEventListener('click', () => MapModule.confirmPicker());
 
+    // Nets and traps are a line between two anchors, not a point.
+    document.getElementById('btn-draw-span')?.addEventListener('click', openSpanPicker);
+    document.getElementById('btn-span-undo')?.addEventListener('click', () => MapModule.clearSpan());
+    document.getElementById('btn-span-confirm')?.addEventListener('click', () => MapModule.confirmSpan());
+    document.getElementById('btn-span-cancel')?.addEventListener('click', () => MapModule.closeSpanPicker());
+
     UIModule.setupTypeChips('type-chips');
+
+    // The net line control only exists for gear that spans water.
+    document.getElementById('type-chips')?.addEventListener('click', () => {
+      setTimeout(syncSpanRow, 0);
+    });
+    syncSpanRow();
 
     const registryToggle = document.getElementById('toggle-registry');
     registryToggle?.addEventListener('change', async e => {
@@ -170,6 +184,57 @@ const App = (function() {
     );
   }
 
+  // ------------------------------------------------------------ net span
+
+  // Only gear that spans water gets the line control.
+  const SPANNING_TYPES = ['net', 'trap'];
+
+  function syncSpanRow() {
+    const row = document.getElementById('span-row');
+    if (!row) return;
+
+    const type = UIModule.getSelectedTypeChip('type-chips');
+    const wants = SPANNING_TYPES.includes(type);
+
+    row.hidden = !wants;
+
+    // Changing to a type that does not span water drops any line already drawn.
+    if (!wants && reportSpan) {
+      reportSpan = null;
+      MapModule.clearSpan();
+    }
+
+    updateSpanSummary();
+  }
+
+  function updateSpanSummary() {
+    const el = document.getElementById('span-summary');
+    const btn = document.getElementById('btn-draw-span');
+    if (!el) return;
+
+    if (!reportSpan) {
+      el.textContent = 'Not drawn yet';
+      if (btn) btn.textContent = 'Draw';
+      return;
+    }
+
+    const metres = Devices.haversine(
+      reportSpan[0][0], reportSpan[0][1],
+      reportSpan[1][0], reportSpan[1][1]
+    );
+
+    el.textContent = Math.round(metres) + ' m between the anchors';
+    if (btn) btn.textContent = 'Redraw';
+  }
+
+  function openSpanPicker() {
+    const start = reportLocation || LocationModule.getLastPosition() || null;
+    MapModule.openSpanPicker(points => {
+      reportSpan = points;
+      updateSpanSummary();
+      UIModule.showToast('Net line set', 'success');
+    }, start);
+  }
   // ------------------------------------------------------------- report flow
 
   function openReportScreen() {
@@ -275,7 +340,7 @@ const App = (function() {
     hint.hidden = false;
     hint.dataset.state = fence.allowed ? 'ok' : 'blocked';
     hint.textContent = fence.allowed
-      ? `${fence.zone} · ${Math.round(fence.shoreDistance)} m from shore (min ${minShore} m)`
+      ? Math.round(fence.shoreDistance) + ' m from shore (min ' + minShore + ' m)'
       : fence.reason;
   }
 
@@ -329,7 +394,8 @@ const App = (function() {
         registry_match: !!match,
         status: 'new',
         report_reason: null,
-        note
+        note,
+        span: reportSpan
       });
 
       if (!payload.valid) {
@@ -362,6 +428,9 @@ const App = (function() {
     const note = document.getElementById('note-input');
     if (note) note.value = '';
     reportLocation = null;
+    reportSpan = null;
+    MapModule.clearSpan();
+    syncSpanRow();
     updateReportLocationDisplay();
   }
 
@@ -507,6 +576,13 @@ const App = (function() {
 
 document.addEventListener('DOMContentLoaded', () => App.init());
 window.App = App;
+
+
+
+
+
+
+
 
 
 

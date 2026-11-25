@@ -96,9 +96,12 @@ const StoreModule = (function() {
       return { ...sighting, id: sighting.id || crypto.randomUUID() };
     }
 
+    // span is client-side only until the column exists; Supabase would reject it.
+    const { span, ...row } = sighting;
+
     const { data, error } = await client
       .from('sightings')
-      .insert(sighting)
+      .insert(row)
       .select()
       .single();
 
@@ -478,4 +481,5 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.StoreModule = StoreModule;
 }
+
 

@@ -14,7 +14,7 @@
        Runs before anything else so the app never boots on mixed assets. -->
   <script>
   (function () {
-    var BUILD = '2026.11.26.2';
+    var BUILD = '2026.11.26.3';
     var KEY = 'netsight_build';
     var seen = null;
     try { seen = localStorage.getItem(KEY); } catch (e) {}
@@ -52,10 +52,10 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="preconnect" href="https://tile.openstreetmap.org">
-  <link rel="stylesheet" href="css/style.css?v=2026.11.26.2">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.26.3">
 
-  <script src="js/config.js?v=2026.11.26.2"></script>
-  <script src="js/theme.js?v=2026.11.26.2"></script>
+  <script src="js/config.js?v=2026.11.26.3"></script>
+  <script src="js/theme.js?v=2026.11.26.3"></script>
 </head>
 <body>
 
@@ -217,6 +217,19 @@
           </header>
           <div class="card__body">
             <div class="chips" id="type-chips" role="group" aria-label="Gear type"></div>
+
+            <!-- A net is a line, not a point. This only appears for gear that
+                 spans water: nets and traps. -->
+            <div class="span-row" id="span-row" hidden>
+              <div class="span-row__text">
+                <span class="span-row__title">Net line</span>
+                <span class="span-row__sub" id="span-summary">Not drawn yet</span>
+              </div>
+              <button type="button" class="btn btn--soft btn--sm" id="btn-draw-span">
+                Draw
+              </button>
+            </div>
+
             <p class="hint">The AI pre-selects a type above the confidence threshold.</p>
           </div>
         </section>
@@ -405,6 +418,28 @@
     </div>
   </div>
 
+
+  <!-- ============ SPAN PICKER (nets are a line, not a point) ============ -->
+  <div id="span-picker-modal" class="sheet" hidden>
+    <div class="sheet__panel">
+      <header class="sheet__head">
+        <h2 class="card__title">Draw the net</h2>
+        <p class="hint">Tap where it starts, then where it ends</p>
+      </header>
+
+      <div id="span-picker-map" class="sheet__map"></div>
+
+      <div class="span-picker__foot">
+        <p class="span-hint" id="span-hint" data-state="idle">Tap the map where the net starts</p>
+        <div class="row row--2 sheet__actions">
+          <button type="button" class="btn btn--ghost" id="btn-span-undo" disabled>Start over</button>
+          <button type="button" class="btn btn--soft" id="btn-span-cancel">Cancel</button>
+          <button type="button" class="btn btn--primary btn--block" id="btn-span-confirm" disabled>Use this line</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <!-- ============ MAP PICKER ============ -->
   <div id="map-picker-modal" class="sheet" hidden>
     <div class="sheet__panel">
@@ -447,18 +482,21 @@
   <!-- ============ scripts ============ -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/status.js?v=2026.11.26.2"></script>
-  <script src="js/devices.js?v=2026.11.26.2"></script>
-  <script src="js/location.js?v=2026.11.26.2"></script>
-  <script src="js/registry.js?v=2026.11.26.2"></script>
-  <script src="js/map.js?v=2026.11.26.2"></script>
-  <script src="js/ui.js?v=2026.11.26.2"></script>
-  <script src="js/detection.js?v=2026.11.26.2"></script>
-  <script src="js/store.js?v=2026.11.26.2"></script>
-  <script src="js/auth.js?v=2026.11.26.2"></script>
-  <script src="js/app.js?v=2026.11.26.2"></script>
+  <script src="js/status.js?v=2026.11.26.3"></script>
+  <script src="js/devices.js?v=2026.11.26.3"></script>
+  <script src="js/location.js?v=2026.11.26.3"></script>
+  <script src="js/registry.js?v=2026.11.26.3"></script>
+  <script src="js/map.js?v=2026.11.26.3"></script>
+  <script src="js/ui.js?v=2026.11.26.3"></script>
+  <script src="js/detection.js?v=2026.11.26.3"></script>
+  <script src="js/store.js?v=2026.11.26.3"></script>
+  <script src="js/auth.js?v=2026.11.26.3"></script>
+  <script src="js/app.js?v=2026.11.26.3"></script>
 </body>
 </html>
+
+
+
 
 
 
