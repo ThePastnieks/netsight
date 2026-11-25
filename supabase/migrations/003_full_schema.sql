@@ -1,16 +1,25 @@
--- NetSight — the whole database, in one migration.
+-- NetSight — the whole database, in one script.
 --
 -- Run this once in Supabase → SQL Editor → New query → Run.
+-- Safe to run again: every statement checks before it creates.
+--
+-- This file is self-contained on purpose. An earlier version assumed
+-- 001_initial_schema.sql had already run and failed with
+--   relation "public.sightings" does not exist
+-- on a fresh project, which is exactly when someone needs it to just work.
+--
+-- Order matters: profiles comes before sightings, because sightings.reported_by
+-- is a foreign key to it.
 --
 -- What it creates:
---   profiles       one row per account, holding the username and the role
+--   profiles       one row per account: username + role
+--   sightings      every reported gear item
 --   shore_shapes   the hand-drawn shoreline
 --   devices        the buoy fleet
---   sightings      already existed; this adds `span` and the missing policies
 --   storage        a bucket for sighting photos
 --
 -- Roles: user / patrol / admin. The first account to sign up becomes admin;
--- everyone after that is a user until an admin promotes them.
+-- everyone after is a user until an admin promotes them.
 --
 -- Row level security is on everywhere. Without it the public anon key would let
 -- anyone read and delete the whole database.
@@ -28,8 +37,8 @@ create table if not exists public.profiles (
 
 create index if not exists idx_profiles_role on public.profiles(role);
 
--- A policy on profiles that reads profiles recurses forever. This helper runs
--- as the definer, so it can look without triggering the policy again.
+-- A policy on profiles that reads profiles recurses forever. These helpers run
+-- as the definer, so they can look without triggering the policy again.
 create or replace function public.is_admin()
 returns boolean
 language sql
@@ -53,27 +62,8 @@ as $$
   select role from public.profiles where id = auth.uid();
 $$;
 
-alter table public.profiles enable row level security;
-
-drop policy if exists "read own profile" on public.profiles;
-create policy "read own profile" on public.profiles
-  for select using (id = auth.uid());
-
-drop policy if exists "admins read all profiles" on public.profiles;
-create policy "admins read all profiles" on public.profiles
-  for select using (public.is_admin());
-
-drop policy if exists "update own username" on public.profiles;
-create policy "update own username" on public.profiles
-  for update using (id = auth.uid())
-  with check (id = auth.uid() and role = public.my_role());
-
-drop policy if exists "admins update roles" on public.profiles;
-create policy "admins update roles" on public.profiles
-  for update using (public.is_admin());
-
--- The profile row is created by this trigger, not by the client. That way a
--- new account cannot choose its own role.
+-- The profile row is created by this trigger, not by the client, so a new
+-- account cannot choose its own role. The first account becomes the admin.
 create or replace function public.handle_new_user()
 returns trigger
 language plpgsql
@@ -90,10 +80,10 @@ begin
     split_part(new.email, '@', 1)
   );
 
-  select exists (select 1 from public.profiles) into first;
+  select not exists (select 1 from public.profiles) into first;
 
-  -- Two people may not claim the same name; the trigger resolves the clash
-  -- rather than failing the whole signup.
+  -- Two people may not claim the same name; resolve the clash rather than
+  -- failing the whole signup.
   select exists (select 1 from public.profiles where username = wanted) into taken;
   if taken then
     wanted := wanted || '-' || substr(new.id::text, 1, 4);
@@ -111,6 +101,61 @@ create trigger on_auth_user_created
   after insert on auth.users
   for each row execute function public.handle_new_user();
 
+-- ============================================================== sightings
+create table if not exists public.sightings (
+  id               uuid primary key default gen_random_uuid(),
+  created_at       timestamptz not null default now(),
+  updated_at       timestamptz not null default now(),
+  photo_url        text,
+  lat              double precision not null,
+  lon              double precision not null,
+  accuracy_m       integer,
+  detected_class   text not null default 'unknown'
+                     check (detected_class in ('buoy','float','net','trap','none','unknown')),
+  confidence       double precision not null default 0
+                     check (confidence >= 0 and confidence <= 1),
+  user_class       text not null default 'unknown'
+                     check (user_class in ('buoy','float','net','trap','unknown')),
+  registry_id      text,
+  registry_match   boolean not null default false,
+  status           text not null default 'new'
+                     check (status in ('new','reported','checked','resolved','false_alarm')),
+  report_reason    text
+                     check (report_reason in ('unmarked','abandoned','hazard','possibly_illegal','other')),
+  inspector_id     text,
+  note             text default ''
+);
+
+-- Columns added after the first draft. `add column if not exists` makes this
+-- safe on a table that already exists from an older run.
+alter table public.sightings
+  add column if not exists span jsonb,
+  add column if not exists reported_by uuid references public.profiles(id) on delete set null,
+  add column if not exists reporter_name text;
+
+create index if not exists idx_sightings_status on public.sightings(status);
+create index if not exists idx_sightings_created on public.sightings(created_at desc);
+create index if not exists idx_sightings_location on public.sightings(lat, lon);
+create index if not exists idx_sightings_user_class on public.sightings(user_class);
+create index if not exists idx_sightings_registry_match on public.sightings(registry_match);
+create index if not exists idx_sightings_reported_by on public.sightings(reported_by);
+
+-- Keep updated_at honest without the client having to remember.
+create or replace function public.touch_updated_at()
+returns trigger
+language plpgsql
+as $$
+begin
+  new.updated_at = now();
+  return new;
+end;
+$$;
+
+drop trigger if exists update_sightings_updated_at on public.sightings;
+create trigger update_sightings_updated_at
+  before update on public.sightings
+  for each row execute function public.touch_updated_at();
+
 -- ========================================================== shore_shapes
 create table if not exists public.shore_shapes (
   id          uuid primary key default gen_random_uuid(),
@@ -123,26 +168,6 @@ create table if not exists public.shore_shapes (
   created_by  uuid references public.profiles(id) on delete set null,
   created_at  timestamptz not null default now()
 );
-
-alter table public.shore_shapes enable row level security;
-
--- Everyone signed in needs to see the shoreline: it decides where they may
--- report. Only an admin may change it.
-drop policy if exists "read shore" on public.shore_shapes;
-create policy "read shore" on public.shore_shapes
-  for select using (auth.role() = 'authenticated');
-
-drop policy if exists "admins write shore" on public.shore_shapes;
-create policy "admins write shore" on public.shore_shapes
-  for insert with check (public.is_admin());
-
-drop policy if exists "admins update shore" on public.shore_shapes;
-create policy "admins update shore" on public.shore_shapes
-  for update using (public.is_admin());
-
-drop policy if exists "admins delete shore" on public.shore_shapes;
-create policy "admins delete shore" on public.shore_shapes
-  for delete using (public.is_admin());
 
 -- =============================================================== devices
 create table if not exists public.devices (
@@ -166,8 +191,48 @@ create table if not exists public.devices (
 
 create index if not exists idx_devices_last_seen on public.devices(last_seen desc);
 
-alter table public.devices enable row level security;
+-- ======================================================= row level security
+alter table public.profiles     enable row level security;
+alter table public.sightings    enable row level security;
+alter table public.shore_shapes enable row level security;
+alter table public.devices      enable row level security;
 
+-- ---- profiles
+drop policy if exists "read own profile" on public.profiles;
+create policy "read own profile" on public.profiles
+  for select using (id = auth.uid());
+
+drop policy if exists "admins read all profiles" on public.profiles;
+create policy "admins read all profiles" on public.profiles
+  for select using (public.is_admin());
+
+drop policy if exists "update own username" on public.profiles;
+create policy "update own username" on public.profiles
+  for update using (id = auth.uid())
+  with check (id = auth.uid() and role = public.my_role());
+
+drop policy if exists "admins update roles" on public.profiles;
+create policy "admins update roles" on public.profiles
+  for update using (public.is_admin());
+
+-- ---- shore_shapes: everyone signed in reads, only admins write
+drop policy if exists "read shore" on public.shore_shapes;
+create policy "read shore" on public.shore_shapes
+  for select using (auth.role() = 'authenticated');
+
+drop policy if exists "admins write shore" on public.shore_shapes;
+create policy "admins write shore" on public.shore_shapes
+  for insert with check (public.is_admin());
+
+drop policy if exists "admins update shore" on public.shore_shapes;
+create policy "admins update shore" on public.shore_shapes
+  for update using (public.is_admin());
+
+drop policy if exists "admins delete shore" on public.shore_shapes;
+create policy "admins delete shore" on public.shore_shapes
+  for delete using (public.is_admin());
+
+-- ---- devices: same split
 drop policy if exists "read devices" on public.devices;
 create policy "read devices" on public.devices
   for select using (auth.role() = 'authenticated');
@@ -184,32 +249,24 @@ drop policy if exists "admins delete devices" on public.devices;
 create policy "admins delete devices" on public.devices
   for delete using (public.is_admin());
 
--- ============================================================== sightings
--- 001_initial_schema.sql created this. These are the additions it needs now.
-
-alter table public.sightings
-  add column if not exists span jsonb,
-  add column if not exists reported_by uuid references public.profiles(id) on delete set null,
-  add column if not exists reporter_name text;
-
-create index if not exists idx_sightings_reported_by on public.sightings(reported_by);
-
+-- ---- sightings
 drop policy if exists "Public read sightings" on public.sightings;
 drop policy if exists "Authenticated insert sightings" on public.sightings;
 drop policy if exists "Inspector update sightings" on public.sightings;
+drop policy if exists "read sightings" on public.sightings;
+drop policy if exists "insert own sightings" on public.sightings;
+drop policy if exists "update sightings" on public.sightings;
+drop policy if exists "delete sightings" on public.sightings;
 
 -- Anyone signed in may see sightings: the map is the product.
-drop policy if exists "read sightings" on public.sightings;
 create policy "read sightings" on public.sightings
   for select using (auth.role() = 'authenticated');
 
 -- You may only create a sighting as yourself.
-drop policy if exists "insert own sightings" on public.sightings;
 create policy "insert own sightings" on public.sightings
   for insert with check (auth.uid() = reported_by);
 
 -- Patrol and admin move cases along. A plain user may still edit their own.
-drop policy if exists "update sightings" on public.sightings;
 create policy "update sightings" on public.sightings
   for update using (
     public.is_admin()
@@ -217,7 +274,6 @@ create policy "update sightings" on public.sightings
     or reported_by = auth.uid()
   );
 
-drop policy if exists "delete sightings" on public.sightings;
 create policy "delete sightings" on public.sightings
   for delete using (public.is_admin());
 
@@ -244,5 +300,20 @@ create policy "Owner deletes photos" on storage.objects
 
 -- ============================================================== realtime
 -- So a sighting reported on one phone appears on another without a refresh.
-alter publication supabase_realtime add table public.sightings;
-alter publication supabase_realtime add table public.shore_shapes;
+-- Adding a table twice raises an error, hence the guard.
+do $$
+begin
+  begin
+    alter publication supabase_realtime add table public.sightings;
+  exception when others then null;
+  end;
+
+  begin
+    alter publication supabase_realtime add table public.shore_shapes;
+  exception when others then null;
+  end;
+end $$;
+
+-- ============================================================ done
+-- Check it worked: Table Editor should list profiles, sightings, shore_shapes
+-- and devices.

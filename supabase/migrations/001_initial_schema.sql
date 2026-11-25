@@ -1,5 +1,10 @@
--- NetSight Database Schema
--- Run in Supabase SQL Editor
+﻿-- NetSight Database Schema — SUPERSEDED
+--
+-- Do not run this on a new project. Run 003_full_schema.sql instead: it creates
+-- everything this file does, plus profiles, shore_shapes, devices and the role
+-- policies, and it is safe to run more than once.
+--
+-- This file is kept only as history. It is what 003 was built from.
 
 -- Enable UUID extension
 CREATE EXTENSION IF NOT EXISTS "uuid-ossp";
@@ -104,3 +109,4 @@ SELECT
   END AS status_priority
 FROM sightings
 ORDER BY created_at DESC;
+

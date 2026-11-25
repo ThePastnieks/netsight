@@ -1,4 +1,4 @@
-# NetSight — database setup
+﻿# NetSight — database setup
 
 The app runs in two modes. This document is the one-time setup that switches it
 from **local** (everything stays in one browser) to **cloud** (accounts, shore
@@ -21,16 +21,23 @@ Total time: about ten minutes.
 ## 2. Create the tables
 
 1. In the project, open **SQL Editor** → **New query**.
-2. Paste the contents of
+2. Paste the **whole** contents of
    [`supabase/migrations/003_full_schema.sql`](../supabase/migrations/003_full_schema.sql).
 3. Press **Run**.
 
-That single script creates `profiles`, `shore_shapes`, `devices`, adds the
-missing columns to `sightings`, creates the photo bucket, and turns on row level
-security everywhere.
+That one script creates everything: `profiles`, `sightings`, `shore_shapes`,
+`devices`, the photo bucket, and row level security on all of them.
 
-> If you have not run `001_initial_schema.sql` yet, run it first — `003` extends
-> the `sightings` table it creates.
+**Run only that file.** It is self-contained and safe to run again — every
+statement checks before it creates. You do not need `001`; it exists only as
+history, and running it first is what produces
+`relation "public.sightings" does not exist` if you skip it.
+
+When it finishes, **Table Editor** should list four tables: `profiles`,
+`sightings`, `shore_shapes`, `devices`.
+
+> The project home page will still say *Last migration: No migrations*. That
+> counter only tracks the Supabase CLI, not the SQL editor. Ignore it.
 
 ## 3. Turn off email confirmation
 
@@ -137,6 +144,10 @@ Row level security enforces this on the server, not just in the interface.
 
 ## Troubleshooting
 
+**`relation "public.sightings" does not exist`**
+You are running an old copy of `003_full_schema.sql`. The current one creates
+`sightings` itself. Pull the latest and paste it again — no need to run `001`.
+
 **"That account has no profile and cannot sign in"**
 The trigger did not run. Re-run `003_full_schema.sql` and check
 **Database → Triggers** for `on_auth_user_created`.
@@ -173,6 +184,7 @@ drop function if exists public.is_admin() cascade;
 drop function if exists public.my_role() cascade;
 ```
 
-Then run `001_initial_schema.sql` and `003_full_schema.sql` again. Auth users
-survive in `auth.users` — delete them under **Authentication → Users** if you
-want a genuinely clean start.
+Then run `003_full_schema.sql` again. Auth users survive in `auth.users` —
+delete them under **Authentication → Users** if you want a genuinely clean start.
+
+

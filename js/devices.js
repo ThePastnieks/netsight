@@ -233,9 +233,14 @@ const Devices = (function() {
       return merged;
     }
 
+    // The id is the key we filter on; sending it in the payload as well would
+    // ask Postgres to rewrite the primary key to the value it already has.
+    const row = deviceToRow(merged);
+    delete row.id;
+
     const { error } = await client
       .from('devices')
-      .update(deviceToRow(merged))
+      .update(row)
       .eq('id', id);
 
     if (error) {
@@ -487,6 +492,7 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.Devices = Devices;
 }
+
 
 
 

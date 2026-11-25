@@ -2,7 +2,7 @@
 
 // Build stamp — bump this on every release. It is used to bust browser caches
 // (asset query strings) and to purge stale service workers.
-const NETSIGHT_BUILD = '2026.11.27.2';
+const NETSIGHT_BUILD = '2026.11.27.3';
 
 const CONFIG = {
   BUILD: NETSIGHT_BUILD,
@@ -16,7 +16,7 @@ const CONFIG = {
   //
   // Leave both empty and the app runs in local mode: everything works, but
   // nothing leaves this browser. The sign-in screen says so.
-  SUPABASE_URL: '',
+  SUPABASE_URL: 'https://noncjggdevddkxrvurop.supabase.co',
   SUPABASE_ANON_KEY: '',
 
   // Accounts sign in with a username. Supabase Auth wants an email, so a
@@ -137,6 +137,8 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.CONFIG = CONFIG;
 }
+
+
 
 
 
