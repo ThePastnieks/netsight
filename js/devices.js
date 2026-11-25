@@ -1,4 +1,4 @@
-// NetSight Devices — the buoy fleet
+﻿// NetSight Devices — the buoy fleet
 //
 // A device is a stodere with GPS, battery, temperature, level and a lift sensor.
 // This module owns the device records, evaluates their telemetry into alerts, and
@@ -24,54 +24,69 @@ const Devices = (function() {
     const now = Date.now();
     const mins = m => new Date(now - m * 60000).toISOString();
 
+    // Every buoy sits inside the Daugava or Ķīšezers permitted area, and every
+    // net carries a `span`: the two anchors it is strung between. The map draws
+    // that span as the green gear line.
     return [
       {
         id: 'NS-000101', nfc: '04:A2:33:1B:7C:80', label: 'Zivju tīkls — Daugava, Andrejosta',
         gearType: 'net', owner: 'Fisher A',
-        lat: 56.9496, lon: 24.1052,
+        lat: 56.9520, lon: 24.1008,
+        span: [[56.9517, 24.10035], [56.9523, 24.10125]],
         battery: 82, temperature_c: 4.1, water_level_cm: 14,
         tilt: { lifted: false, degrees: 4 }, light_on: true, signal: -79,
         lastSeen: mins(8), registeredAt: mins(60 * 24 * 12)
       },
       {
-        id: 'NS-000102', nfc: '04:A2:33:1B:7C:81', label: 'Boja — Ķīšezers, ziemeļu gals',
+        id: 'NS-000102', nfc: '04:A2:33:1B:7C:81', label: 'Boja — Daugava, pie Vanšu tilta',
         gearType: 'buoy', owner: 'Fisher B',
-        lat: 56.9835, lon: 24.1121,
+        lat: 56.9600, lon: 24.0990,
         battery: 17, temperature_c: 3.8, water_level_cm: 11,
         tilt: { lifted: false, degrees: 2 }, light_on: true, signal: -91,
         lastSeen: mins(42), registeredAt: mins(60 * 24 * 30)
       },
       {
-        id: 'NS-000103', nfc: '04:A2:33:1B:7C:82', label: 'Slazds — Buļļupe',
+        id: 'NS-000103', nfc: '04:A2:33:1B:7C:82', label: 'Slazds — Daugava, ziemeļu posms',
         gearType: 'trap', owner: 'Fisher C',
-        lat: 57.0385, lon: 24.2720,
+        lat: 56.9650, lon: 24.0960,
+        span: [[56.9647, 24.09555], [56.9653, 24.09645]],
         battery: 64, temperature_c: 4.4, water_level_cm: 16,
         tilt: { lifted: true, degrees: 51 }, light_on: false, signal: -88,
         lastSeen: mins(3), registeredAt: mins(60 * 24 * 5)
       },
       {
-        id: 'NS-000104', nfc: '04:A2:33:1B:7C:83', label: 'Tīkls — Daugava, Zaķusala',
+        id: 'NS-000104', nfc: '04:A2:33:1B:7C:83', label: 'Tīkls — Daugava, pretī Zaķusalai',
         gearType: 'net', owner: 'Fisher D',
-        lat: 56.9440, lon: 24.1180,
+        lat: 56.9470, lon: 24.1055,
+        span: [[56.9467, 24.10505], [56.9473, 24.10595]],
         battery: 91, temperature_c: 4.0, water_level_cm: 13,
         tilt: { lifted: false, degrees: 1 }, light_on: true, signal: -74,
         lastSeen: mins(15), registeredAt: mins(60 * 24 * 3)
       },
       {
-        id: 'NS-000105', nfc: '04:A2:33:1B:7C:84', label: 'Pludiņš — Lielupe, grīva',
+        id: 'NS-000105', nfc: '04:A2:33:1B:7C:84', label: 'Pludiņš — Daugava, dienvidu posms',
         gearType: 'float', owner: 'Fisher E',
-        lat: 56.9951, lon: 24.1990,
+        lat: 56.9420, lon: 24.1100,
         battery: 46, temperature_c: 0.6, water_level_cm: 9,
         tilt: { lifted: false, degrees: 6 }, light_on: false, signal: -95,
         lastSeen: mins(60 * 9), registeredAt: mins(60 * 24 * 20)
       },
       {
-        id: 'NS-000106', nfc: '04:A2:33:1B:7C:85', label: 'Tīkls — Daugava, Ķengarags',
+        id: 'NS-000106', nfc: '04:A2:33:1B:7C:85', label: 'Tīkls — Daugava, vidus',
         gearType: 'net', owner: 'Fisher A',
-        lat: 56.9290, lon: 24.1420,
+        lat: 56.9570, lon: 24.0980,
+        span: [[56.9567, 24.09755], [56.9573, 24.09845]],
         battery: 73, temperature_c: 4.2, water_level_cm: 15,
         tilt: { lifted: false, degrees: 3 }, light_on: true, signal: -82,
         lastSeen: mins(21), registeredAt: mins(60 * 24 * 8)
+      },
+      {
+        id: 'NS-000107', nfc: '04:A2:33:1B:7C:86', label: 'Boja — Ķīšezers, ziemeļu gals',
+        gearType: 'buoy', owner: 'Fisher B',
+        lat: 56.9980, lon: 24.1250,
+        battery: 88, temperature_c: 3.4, water_level_cm: 12,
+        tilt: { lifted: false, degrees: 2 }, light_on: true, signal: -86,
+        lastSeen: mins(19), registeredAt: mins(60 * 24 * 16)
       }
     ];
   }
@@ -241,46 +256,144 @@ const Devices = (function() {
   }
 
   // -------------------------------------------------------------- geofence
+  //
+  // The permitted area is the shoreline polygon pushed inward by
+  // CFG.minShoreMetres. The map draws that offset polygon as the red line, and
+  // checkGeofence() asks the same question the line draws: is the point inside
+  // it? One geometry, one answer — the boundary you see is the boundary that
+  // decides.
 
-  // Allowed water polygons. Gear outside every zone, or closer than
-  // CFG.minShoreMetres to a zone edge, is not permitted.
+  let permittedCache = null;
+
+  function shorelines() {
+    return CFG.geofence.shorelines || [];
+  }
+
+  // The offset polygons, computed once.
+  function permittedAreas() {
+    if (permittedCache) return permittedCache;
+
+    permittedCache = shorelines()
+      .map(zone => ({
+        name: zone.name,
+        shore: zone.coords,
+        coords: offsetInward(zone.coords, CFG.minShoreMetres)
+      }))
+      .filter(zone => zone.coords.length >= 3);
+
+    return permittedCache;
+  }
+
+  // Pushes every vertex of a polygon toward its interior by `metres`.
+  //
+  // Works in a local metre plane so a metre is a metre, uses a miter offset at
+  // each corner, and clamps very sharp corners so they cannot shoot to
+  // infinity. Good enough for a river bank; not a general-purpose clipper.
+  function offsetInward(coords, metres) {
+    if (!Array.isArray(coords) || coords.length < 3) return [];
+
+    const latRef = coords.reduce((sum, c) => sum + c[0], 0) / coords.length;
+    const mPerLat = 111320;
+    const mPerLon = 111320 * Math.cos(latRef * Math.PI / 180);
+
+    const pts = coords.map(c => ({ x: c[1] * mPerLon, y: c[0] * mPerLat }));
+
+    // Shoelace: positive area means counterclockwise, so the interior sits to
+    // the left of travel and the inward normal is (-dy, dx).
+    let area = 0;
+    for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+      area += pts[j].x * pts[i].y - pts[i].x * pts[j].y;
+    }
+    const flip = area >= 0 ? 1 : -1;
+
+    const n = pts.length;
+    const out = [];
+
+    for (let i = 0; i < n; i++) {
+      const prev = pts[(i - 1 + n) % n];
+      const cur = pts[i];
+      const next = pts[(i + 1) % n];
+
+      const a = inwardNormal(prev, cur, flip);
+      const b = inwardNormal(cur, next, flip);
+
+      let bx = a.x + b.x;
+      let by = a.y + b.y;
+      const len = Math.hypot(bx, by);
+
+      if (len < 1e-9) {
+        out.push(cur);
+        continue;
+      }
+
+      bx /= len;
+      by /= len;
+
+      const cos = bx * a.x + by * a.y;
+      // A hairpin corner would need an enormous miter; cap it.
+      const scale = cos < 0.25 ? 4 : 1 / cos;
+
+      out.push({ x: cur.x + bx * metres * scale, y: cur.y + by * metres * scale });
+    }
+
+    return out.map(p => [p.y / mPerLat, p.x / mPerLon]);
+  }
+
+  function inwardNormal(a, b, flip) {
+    let dx = b.x - a.x;
+    let dy = b.y - a.y;
+    const len = Math.hypot(dx, dy) || 1;
+    dx /= len;
+    dy /= len;
+    return { x: -dy * flip, y: dx * flip };
+  }
+
+  // Is this spot inside the permitted water? Reports the zone and the real
+  // distance to the bank either way, so the message can say why.
   function checkGeofence(lat, lon) {
     if (!Number.isFinite(lat) || !Number.isFinite(lon)) {
-      return { allowed: false, reason: 'No coordinates', inside: false, shoreDistance: null };
+      return { allowed: false, inside: false, shoreDistance: null, reason: 'No coordinates' };
     }
 
-    const zones = CFG.geofence.zones || [];
-    if (!zones.length) {
-      return { allowed: true, reason: 'No zones configured', inside: true, shoreDistance: null };
+    const areas = permittedAreas();
+
+    if (!areas.length) {
+      return {
+        allowed: true, inside: true, shoreDistance: null,
+        reason: 'No shoreline configured'
+      };
     }
 
-    let best = null;
+    let onWater = false;
+    let nearest = null;
 
-    for (const zone of zones) {
-      if (!pointInPolygon(lat, lon, zone.coords)) continue;
+    for (const area of areas) {
+      if (!pointInPolygon(lat, lon, area.shore)) continue;
 
-      const shore = distanceToPolygonEdge(lat, lon, zone.coords);
-      if (best === null || shore > best.shoreDistance) {
-        best = { zone: zone.name, shoreDistance: shore };
+      onWater = true;
+      const shore = distanceToPolygonEdge(lat, lon, area.shore);
+
+      if (nearest === null || shore > nearest.shoreDistance) {
+        nearest = { name: area.name, shoreDistance: shore };
       }
     }
 
-    if (best === null) {
+    if (!onWater) {
       return {
-        allowed: false,
-        inside: false,
-        shoreDistance: null,
+        allowed: false, inside: false, shoreDistance: null,
         reason: 'Outside the permitted water area'
       };
     }
 
-    if (best.shoreDistance < CFG.minShoreMetres) {
+    const permitted = areas.some(area => pointInPolygon(lat, lon, area.coords));
+
+    if (!permitted) {
       return {
         allowed: false,
         inside: true,
-        zone: best.zone,
-        shoreDistance: best.shoreDistance,
-        reason: `${Math.round(best.shoreDistance)} m from shore — at least ` +
+        zone: nearest.name,
+        shoreDistance: nearest.shoreDistance,
+        reason: `${Math.round(nearest.shoreDistance)} m from shore — at least ` +
                 `${CFG.minShoreMetres} m required`
       };
     }
@@ -288,9 +401,9 @@ const Devices = (function() {
     return {
       allowed: true,
       inside: true,
-      zone: best.zone,
-      shoreDistance: best.shoreDistance,
-      reason: `${Math.round(best.shoreDistance)} m from shore`
+      zone: nearest.name,
+      shoreDistance: nearest.shoreDistance,
+      reason: `${Math.round(nearest.shoreDistance)} m from shore`
     };
   }
 
@@ -341,7 +454,6 @@ const Devices = (function() {
 
     return Math.hypot(px - t * bx, py - t * by);
   }
-
   function haversine(lat1, lon1, lat2, lon2) {
     const R = 6371000;
     const toRad = d => d * Math.PI / 180;
@@ -389,6 +501,9 @@ const Devices = (function() {
     summary,
     worstLevel,
     checkGeofence,
+    permittedAreas,
+    offsetInward,
+    distanceToPolygonEdge,
     applyTelemetry,
     haversine
   };
@@ -399,3 +514,5 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.Devices = Devices;
 }
+
+

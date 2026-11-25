@@ -2,7 +2,7 @@
 
 // Build stamp — bump this on every release. It is used to bust browser caches
 // (asset query strings) and to purge stale service workers.
-const NETSIGHT_BUILD = '2026.11.26.1';
+const NETSIGHT_BUILD = '2026.11.26.2';
 
 const CONFIG = {
   BUILD: NETSIGHT_BUILD,
@@ -45,26 +45,49 @@ const CONFIG = {
     offlineHours: 6,        // silent longer than this is an alert
     driftMetres: 25,        // moved this far from where it was registered
 
-    // Where gear may legally sit. Gear outside every zone, or closer than
-    // minShoreMetres to a zone edge, is refused when reported.
-    // Zones are illustrative — replace with the real Riga water boundary.
+    // Where gear may legally sit.
+    //
+    // `shorelines` is the water body outline — the actual bank. The permitted
+    // boundary is that polygon offset inward by minShoreMetres, and it is drawn
+    // as the red line on the map. A point is allowed only if it falls inside
+    // that offset, so "50 m from shore" means one thing everywhere in the app.
+    //
+    // These outlines are hand-traced approximations of the Riga centre
+    // waterfront, good enough to build against. Replace them with the real
+    // municipal water boundary before anything here is legally binding.
     minShoreMetres: 50,
     geofence: {
-      zones: [
+      shorelines: [
         {
           name: 'Daugava — Riga centre',
           coords: [
-            [56.9260, 24.1580], [56.9350, 24.1350], [56.9450, 24.1150],
-            [56.9560, 24.0950], [56.9680, 24.0700], [56.9780, 24.0500],
-            [56.9830, 24.0580], [56.9730, 24.0800], [56.9610, 24.1050],
-            [56.9500, 24.1250], [56.9400, 24.1450], [56.9310, 24.1680]
+            // east bank, south to north
+            [56.9385, 24.1185],
+            [56.9445, 24.1095],
+            [56.9515, 24.1050],
+            [56.9590, 24.1055],
+            [56.9645, 24.1025],
+            [56.9688, 24.0990],
+            // north end, across to the west bank
+            [56.9692, 24.0905],
+            // west bank, north to south
+            [56.9645, 24.0915],
+            [56.9590, 24.0925],
+            [56.9515, 24.0962],
+            [56.9445, 24.1020],
+            [56.9392, 24.1105]
           ]
         },
         {
           name: 'Ķīšezers',
           coords: [
-            [56.9780, 24.1050], [56.9850, 24.1250], [57.0000, 24.1400],
-            [57.0080, 24.1350], [57.0020, 24.1100], [56.9900, 24.0980]
+            [56.9820, 24.1080],
+            [56.9860, 24.1250],
+            [56.9970, 24.1400],
+            [57.0060, 24.1420],
+            [57.0100, 24.1300],
+            [57.0040, 24.1120],
+            [56.9930, 24.1040]
           ]
         }
       ]
@@ -138,6 +161,7 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.CONFIG = CONFIG;
 }
+
 
 
 

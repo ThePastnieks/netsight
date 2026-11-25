@@ -16,10 +16,9 @@ python -m http.server 8000     # or: npx serve .
 | User app | http://localhost:8000/ | User |
 | Water Patrol | http://localhost:8000/patrol.html | Water Patrol |
 | Admin panel | http://localhost:8000/admin.html | Administrator |
-| Cache reset | http://localhost:8000/reset.html | troubleshooting |
 
-Every page except the login and reset screens checks the session and bounces you
-back to `login.html` (or to your own role's page) if you are not allowed in.
+Every page except the login screen checks the session and bounces you back to
+`login.html` (or to your own role's page) if you are not allowed in.
 
 ## Signing in
 
@@ -74,8 +73,8 @@ salt per account) and kept in this browser's `localStorage` under
 > The build number lives in `js/config.js → NETSIGHT_BUILD`. Bump it on every
 > release — the HTML pages append `?v=<build>` to every local asset and purge
 > stale service workers, so the browser always loads the new files. There is no
-> service worker any more — an old one from a previous build is unregistered
-> automatically, and `reset.html` clears everything in one click.
+> service worker any more, and an old one from a previous build is unregistered
+> automatically on the first load of a new build — no manual cache clearing.
 
 ---
 
@@ -110,9 +109,25 @@ to disappoint, is in **[docs/HARDWARE.md](docs/HARDWARE.md)**.
 | Where | What it shows |
 |---|---|
 | Admin → **Devices** | Every buoy: battery, water temperature, level, light, last report. Alerts at the top, worst first. |
-| User map | Buoy markers on by default, colour by alert level. Tap for details. |
-| Patrol map | The same buoys, plus the permitted-water outlines. |
+| User map | Buoy markers on by default. Nets draw as a green line between their two anchors. |
+| Patrol map | The same buoys and gear lines, with the 50 m limit always drawn. |
 | Report screen | A geofence line under the coordinates: which zone, metres from shore, or why the spot is refused. |
+
+### The 50 m line
+
+The map draws three things over the water:
+
+* a **dotted grey hairline** — the bank, the real shoreline
+* a **soft green fill** — the water you may legally use
+* a **red line** — the limit, exactly 50 m inside the bank
+
+The red line is not decoration. `Devices.permittedAreas()` offsets the shoreline
+polygon inward by `minShoreMetres` with a miter offset, and `checkGeofence()`
+tests the same polygon the line draws. What you see is what decides.
+
+Gear that spans a line — nets and traps — carries a `span`: the two anchors it is
+strung between. The map draws that as the green gear line, with a dot at each
+anchor.
 
 ### Alerts
 
@@ -126,12 +141,13 @@ to disappoint, is in **[docs/HARDWARE.md](docs/HARDWARE.md)**.
 
 Thresholds live in `CONFIG.DEVICES` in `js/config.js`.
 
-### Geofence
+### Shoreline data
 
-Gear may only be reported inside a permitted water polygon and at least 50 m
-from its edge. Both are in `CONFIG.DEVICES.geofence`. The seeded zones
-(Daugava, Ķīšezers) are **illustrative** — replace them with the real Riga
-water boundary before this means anything legally.
+The shore outlines in `CONFIG.DEVICES.geofence.shorelines` are hand-traced
+approximations of the Riga centre waterfront — good enough to build against, not
+survey data. Replace them with the municipal water boundary before anything here
+is legally binding. Everything else follows from them automatically: change the
+outline, and the red line, the fill and the report check all move with it.
 
 Reporting outside the fence is not blocked outright: the app explains why and
 lets the reporter override, because a prototype that silently eats reports is
@@ -234,7 +250,6 @@ index.html                 User app (map, report, settings)
 patrol.html                Water Patrol (map, cases, settings)
 admin.html                 Admin panel (points, detection, security)
 devices.js                 Buoy fleet: telemetry, alerts, geofence
-reset.html                 One-click cache purge (also removes old service workers)
 HARDWARE.md                Hardware spec read-through: what the device must do
 DETECT.md                  The model contract — read this to build the AI
 manifest.webmanifest       PWA metadata (install prompt, no service worker)
@@ -290,6 +305,9 @@ FileReader, fetch, `color-mix()` (graceful fallback), CSS Grid.
 ## License
 
 MIT — prototype for demonstration purposes.
+
+
+
 
 
 

@@ -21,6 +21,11 @@ const MapModule = (function() {
   let currentFilter = 'all';
   let registryVisible = false;
 
+  // Geofence palette. Red is the 50 m limit, green is gear on the water.
+  const LIMIT_LINE = '#E5484D';
+  const PERMIT_FILL = '#2FA36B';
+  const BANK_LINE = '#7D8C99';
+  const GEAR_LINE = '#2FA36B';
   const FILTER_LABELS = {
     all: 'All sightings',
     unverified: 'Unverified only',
@@ -287,6 +292,29 @@ const MapModule = (function() {
 
       const level = (typeof Devices !== 'undefined') ? Devices.worstLevel(d) : 'ok';
 
+      // A net is strung between two anchors: draw the span first so the marker
+      // sits on top of its own line.
+      if (Array.isArray(d.span) && d.span.length === 2) {
+        L.polyline(d.span, {
+          color: GEAR_LINE,
+          weight: 3,
+          opacity: 0.9,
+          lineCap: 'round',
+          interactive: false
+        }).addTo(deviceLayer);
+
+        d.span.forEach(point => {
+          L.circleMarker(point, {
+            radius: 3.5,
+            color: '#fff',
+            weight: 1.5,
+            fillColor: GEAR_LINE,
+            fillOpacity: 1,
+            interactive: false
+          }).addTo(deviceLayer);
+        });
+      }
+
       L.marker([d.lat, d.lon], {
         icon: deviceIcon(level),
         title: d.label,
@@ -306,8 +334,8 @@ const MapModule = (function() {
     return !!show;
   }
 
-  // Draws the permitted water zones so a reporter can see the boundary before
-  // they place a point.
+  // Draws the permitted water: the bank itself as a hairline, the 50 m limit as
+  // the red line, and a soft fill for the area you may actually use.
   function toggleZones(show) {
     if (!map || !zoneLayer) return false;
 
@@ -318,17 +346,49 @@ const MapModule = (function() {
       return false;
     }
 
-    const zones = (CONFIG.DEVICES.geofence.zones || []);
-    zones.forEach(zone => {
-      L.polygon(zone.coords, {
-        color: '#1FA6D8',
-        weight: 1.5,
-        dashArray: '6 6',
-        fillColor: '#1FA6D8',
-        fillOpacity: 0.07,
+    if (typeof Devices === 'undefined') return false;
+
+    Devices.permittedAreas().forEach(area => {
+      // The bank — what the red line is measured from.
+      L.polygon(area.shore, {
+        color: BANK_LINE,
+        weight: 1,
+        opacity: 0.5,
+        dashArray: '3 5',
+        fill: false,
+        interactive: false
+      }).addTo(zoneLayer);
+
+      // The permitted area: inside the 50 m limit.
+      L.polygon(area.coords, {
+        color: 'transparent',
+        fillColor: PERMIT_FILL,
+        fillOpacity: 0.1,
+        interactive: false
+      }).addTo(zoneLayer);
+
+      // A wider, translucent pass under the line gives it weight without a
+      // hard shadow, so it stays readable over pale water and dark tiles alike.
+      L.polygon(area.coords, {
+        color: LIMIT_LINE,
+        weight: 7,
+        opacity: 0.16,
+        fill: false,
+        lineCap: 'round',
+        lineJoin: 'round',
+        interactive: false
+      }).addTo(zoneLayer);
+
+      L.polygon(area.coords, {
+        color: LIMIT_LINE,
+        weight: 2.5,
+        opacity: 0.9,
+        fill: false,
+        lineCap: 'round',
+        lineJoin: 'round',
         interactive: false
       })
-        .bindTooltip(zone.name, { sticky: true })
+        .bindTooltip(area.name + ' · 50 m from shore', { sticky: true })
         .addTo(zoneLayer);
     });
 
@@ -461,6 +521,7 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.MapModule = MapModule;
 }
+
 
 
 
