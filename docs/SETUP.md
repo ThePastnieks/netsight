@@ -1,4 +1,4 @@
-# NetSight — database setup
+﻿# NetSight — database setup
 
 The app runs in two modes. This document is the one-time setup that switches it
 from **local** (everything stays in one browser) to **cloud** (accounts, shore
@@ -50,15 +50,22 @@ even though the policies are correct. Both checks must pass.
 > The project home page will still say *Last migration: No migrations*. That
 > counter only tracks the Supabase CLI, not the SQL editor. Ignore it.
 
-## 3. Turn off email confirmation
+## 3. Switch the Email provider on, and confirmation off
 
-The app signs in with a username, not an email, so there is no inbox to confirm
-from.
+Both are on the same screen: **Authentication → Sign In / Providers**.
 
-**Authentication → Providers → Email** → turn **Confirm email** off → **Save**.
+| Switch | Set it to | Why |
+|---|---|---|
+| **Email** (under Auth Providers) | **Enabled** | Newer projects ship with it **disabled**, and every signup fails with `email_provider_disabled` / "Email signups are disabled" |
+| **Allow new users to sign up** | **On** | Otherwise nobody can register at all |
+| **Confirm email** | **Off** | The app signs in with a username, so there is no inbox to confirm from |
 
-Without this, every signup stops at "Account created, but Supabase still wants an
-email confirmation", and you cannot even reach a session to test with.
+The Email row showing `DISABLED` in the providers list is the one that catches
+people: the sign-up form looks perfect and refuses every attempt. Open that row
+and enable it.
+
+Without these, signup stops at "Account created, but Supabase still wants an
+email confirmation" — or fails before it starts.
 
 The app also signs up with `username@netsight.lv`. That domain is never used to
 send anything — it only satisfies the shape Supabase expects. It must be a
@@ -183,6 +190,11 @@ You want rows for `authenticated` (select, insert, update, delete) and for `anon
 The `AUTH_EMAIL_DOMAIN` in `js/config.js` is a reserved name. Use a normal domain
 — `netsight.lv` works, `netsight.local` does not.
 
+**"Email signups are disabled" / `email_provider_disabled`**
+The Email provider is switched off. **Authentication → Sign In / Providers** →
+open the **Email** row (it says `DISABLED`) → enable it → Save. New projects ship
+this way, and the sign-up form gives no hint that the cause is a switch.
+
 **"That account has no profile and cannot sign in"**
 The trigger did not run. Re-run `003_full_schema.sql` and check
 **Database → Triggers** for `on_auth_user_created`.
@@ -221,6 +233,8 @@ drop function if exists public.my_role() cascade;
 
 Then run `003_full_schema.sql` again. Auth users survive in `auth.users` —
 delete them under **Authentication → Users** if you want a genuinely clean start.
+
+
 
 
 

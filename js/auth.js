@@ -1,4 +1,4 @@
-﻿// NetSight Auth — accounts in Supabase, or in this browser if Supabase is absent
+// NetSight Auth — accounts in Supabase, or in this browser if Supabase is absent
 //
 // Two modes, one API:
 //
@@ -341,6 +341,25 @@ const Auth = (function() {
 
   function friendlyAuthError(error) {
     const msg = String(error && error.message || '');
+    const code = String(error && error.code || '');
+
+    // Setup problems. Each one is a switch somewhere in the Supabase dashboard,
+    // and naming the switch saves an hour of guessing.
+    if (code === 'email_provider_disabled' || /email signups are disabled/i.test(msg)) {
+      return 'Sign-ups are switched off in Supabase: Authentication → Sign In / ' +
+             'Providers → Email is DISABLED. Turn it on there.';
+    }
+
+    if (code === 'signup_disabled' || /signups? (are )?disabled/i.test(msg)) {
+      return 'Sign-ups are switched off in Supabase: Authentication → Sign In / ' +
+             'Providers → Allow new users to sign up.';
+    }
+
+    if (code === 'email_address_invalid' || /email address .* is invalid/i.test(msg)) {
+      return 'Supabase rejected the address this username maps to. Set a normal ' +
+             'domain in CONFIG.AUTH_EMAIL_DOMAIN (js/config.js) — reserved names ' +
+             'such as .local are refused.';
+    }
 
     if (/already registered|already exists/i.test(msg)) return 'That username is taken';
     if (/password/i.test(msg) && /short|weak/i.test(msg)) {
