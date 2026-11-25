@@ -1,4 +1,4 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="en">
 <head>
   <meta charset="UTF-8">
@@ -57,7 +57,7 @@
     <ul id="steps">
       <li><span class="dot" id="d1"></span><span>Vecie caches</span></li>
       <li><span class="dot" id="d2"></span><span>Service worker'i</span></li>
-      <li><span class="dot" id="d3"></span><span>localStorage (kešati faili)</span></li>
+      <li><span class="dot" id="d3"></span><span>localStorage (keeps accounts and theme)</span></li>
       <li><span class="dot" id="d4"></span><span>sessionStorage</span></li>
     </ul>
 
@@ -103,7 +103,7 @@
       mark(d3, 'run');
       try {
         var keep = {};
-        ['netsight_theme', 'netsight_ai_settings'].forEach(function (k) {
+        ['netsight_theme', 'netsight_detect_settings', 'netsight_users', 'netsight_session'].forEach(function (k) {
           var v = localStorage.getItem(k);
           if (v !== null) keep[k] = v;
         });
@@ -130,3 +130,4 @@
   </script>
 </body>
 </html>
+

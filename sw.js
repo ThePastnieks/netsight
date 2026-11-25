@@ -1,6 +1,6 @@
 ﻿/* NetSight service worker — app shell + runtime cache, offline first */
 
-const VERSION = 'netsight-v13';
+const VERSION = 'netsight-v14';
 const SHELL_CACHE = `${VERSION}-shell`;
 const RUNTIME_CACHE = `${VERSION}-runtime`;
 
@@ -88,6 +88,7 @@ self.addEventListener('fetch', event => {
     }).catch(() => cached))
   );
 });
+
 
 
 

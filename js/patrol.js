@@ -1,4 +1,4 @@
-// NetSight Water Patrol
+﻿// NetSight Water Patrol
 //
 // The patrol sees every case on a map and in a list, opens one, and moves it
 // along: new → reported → checked → resolved | false alarm.
@@ -240,3 +240,4 @@ const Patrol = (function() {
 
 document.addEventListener('DOMContentLoaded', () => Patrol.init());
 window.Patrol = Patrol;
+

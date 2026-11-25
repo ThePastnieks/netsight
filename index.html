@@ -14,7 +14,7 @@
        Runs before anything else so the app never boots on mixed assets. -->
   <script>
   (function () {
-    var BUILD = '2026.11.24.4';
+    var BUILD = '2026.11.25.1';
     var KEY = 'netsight_build';
     var seen = null;
     try { seen = localStorage.getItem(KEY); } catch (e) {}
@@ -51,10 +51,10 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="preconnect" href="https://tile.openstreetmap.org">
-  <link rel="stylesheet" href="css/style.css?v=2026.11.24.4">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.25.1">
 
-  <script src="js/config.js?v=2026.11.24.4"></script>
-  <script src="js/theme.js?v=2026.11.24.4"></script>
+  <script src="js/config.js?v=2026.11.25.1"></script>
+  <script src="js/theme.js?v=2026.11.25.1"></script>
 </head>
 <body>
 
@@ -82,7 +82,7 @@
       <div class="app-bar__right">
         <span class="role-chip">
           <span class="role-chip__dot"></span>
-          <span data-role-short>Boater</span>
+          <span data-user-name>—</span>
         </span>
         <button type="button" class="pill pill--ai" id="ai-pill" data-mode="off"
                 title="AI status" aria-label="AI status">
@@ -352,7 +352,7 @@
           <div class="ai-status-row">
             <span class="ai-status-row__dot" data-state="ready"></span>
             <div class="ai-status-row__text">
-              <span class="ai-status-row__title" data-role-label>Boater</span>
+              <span class="ai-status-row__title" data-role-label>User</span>
               <span class="ai-status-row__sub">Signed in · reports and map</span>
             </div>
           </div>
@@ -410,17 +410,19 @@
   <!-- ============ scripts ============ -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/status.js?v=2026.11.24.4"></script>
-  <script src="js/location.js?v=2026.11.24.4"></script>
-  <script src="js/registry.js?v=2026.11.24.4"></script>
-  <script src="js/map.js?v=2026.11.24.4"></script>
-  <script src="js/ui.js?v=2026.11.24.4"></script>
-  <script src="js/detection.js?v=2026.11.24.4"></script>
-  <script src="js/store.js?v=2026.11.24.4"></script>
-  <script src="js/auth.js?v=2026.11.24.4"></script>
-  <script src="js/app.js?v=2026.11.24.4"></script>
+  <script src="js/status.js?v=2026.11.25.1"></script>
+  <script src="js/location.js?v=2026.11.25.1"></script>
+  <script src="js/registry.js?v=2026.11.25.1"></script>
+  <script src="js/map.js?v=2026.11.25.1"></script>
+  <script src="js/ui.js?v=2026.11.25.1"></script>
+  <script src="js/detection.js?v=2026.11.25.1"></script>
+  <script src="js/store.js?v=2026.11.25.1"></script>
+  <script src="js/auth.js?v=2026.11.25.1"></script>
+  <script src="js/app.js?v=2026.11.25.1"></script>
 </body>
 </html>
+
+
 
 
 

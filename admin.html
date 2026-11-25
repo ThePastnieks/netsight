@@ -11,7 +11,7 @@
 
   <script>
   (function () {
-    var BUILD = '2026.11.24.4';
+    var BUILD = '2026.11.25.1';
     var KEY = 'netsight_build';
     var seen = null;
     try { seen = localStorage.getItem(KEY); } catch (e) {}
@@ -34,10 +34,10 @@
 
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/netsight-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css?v=2026.11.24.4">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.25.1">
 
-  <script src="js/config.js?v=2026.11.24.4"></script>
-  <script src="js/theme.js?v=2026.11.24.4"></script>
+  <script src="js/config.js?v=2026.11.25.1"></script>
+  <script src="js/theme.js?v=2026.11.25.1"></script>
 </head>
 <body data-page="admin">
 
@@ -64,7 +64,7 @@
       <div class="app-bar__right">
         <span class="role-chip">
           <span class="role-chip__dot"></span>
-          <span data-role-short>Admin</span>
+          <span data-user-name>—</span>
         </span>
         <button type="button" class="icon-btn" data-theme-toggle aria-label="Theme">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
@@ -85,6 +85,7 @@
     <div class="admin-tabs segmented segmented--full" role="tablist">
       <button type="button" class="segment is-active" data-tab="points" role="tab">Points</button>
       <button type="button" class="segment" data-tab="ai" role="tab">AI</button>
+      <button type="button" class="segment" data-tab="users" role="tab">Users</button>
       <button type="button" class="segment" data-tab="security" role="tab">Security</button>
     </div>
 
@@ -236,26 +237,51 @@
 
       </section>
       <!-- ---------------- SECURITY ---------------- -->
+      <!-- ---------------- USERS ---------------- -->
+      <section class="admin-pane" data-pane="users">
+
+        <div class="card">
+          <header class="card__head">
+            <h2 class="card__title">Accounts</h2>
+            <span class="tag" id="user-count">0</span>
+          </header>
+          <div class="card__body">
+            <p class="hint">
+              New accounts are created on the sign-in screen and start as
+              <b>User</b>. Change a role here to give someone the case list
+              (<b>Water Patrol</b>) or full access (<b>Administrator</b>).
+            </p>
+          </div>
+        </div>
+
+        <div id="users-list" class="users"></div>
+
+        <div id="users-empty" class="empty-state" hidden>
+          <p>No accounts yet</p>
+        </div>
+      </section>
+
+      <!-- ---------------- SECURITY ---------------- -->
       <section class="admin-pane" data-pane="security">
         <div class="card">
           <header class="card__head">
-            <h2 class="card__title">Change PIN</h2>
+            <h2 class="card__title">Change my password</h2>
           </header>
           <div class="card__body stack-sm">
             <label class="field">
-              <span class="field__label">Current PIN</span>
-              <input class="input" id="pin-old" type="password" inputmode="numeric" autocomplete="off">
+              <span class="field__label">Current password</span>
+              <input class="input" id="pw-old" type="password" autocomplete="current-password">
             </label>
             <label class="field">
-              <span class="field__label">New PIN (min 4 digits)</span>
-              <input class="input" id="pin-new" type="password" inputmode="numeric" autocomplete="off">
+              <span class="field__label">New password</span>
+              <input class="input" id="pw-new" type="password" autocomplete="new-password">
             </label>
             <label class="field">
-              <span class="field__label">Repeat new PIN</span>
-              <input class="input" id="pin-new2" type="password" inputmode="numeric" autocomplete="off">
+              <span class="field__label">Repeat new password</span>
+              <input class="input" id="pw-new2" type="password" autocomplete="new-password">
             </label>
-            <button type="button" class="btn btn--primary btn--block" id="btn-change-pin">Save PIN</button>
-            <p class="note" id="pin-status" data-tone="muted"></p>
+            <button type="button" class="btn btn--primary btn--block" id="btn-change-pw">Save password</button>
+            <p class="note" id="pw-status" data-tone="muted"></p>
           </div>
         </div>
 
@@ -267,14 +293,14 @@
             <div class="ai-status-row">
               <span class="ai-status-row__dot" data-state="ready"></span>
               <div class="ai-status-row__text">
-                <span class="ai-status-row__title" data-role-label>Administrator</span>
-                <span class="ai-status-row__sub">Signed in · full access</span>
+                <span class="ai-status-row__title" data-user-name>—</span>
+                <span class="ai-status-row__sub" data-role-label>Administrator</span>
               </div>
             </div>
             <button type="button" class="btn btn--soft btn--block" data-signout>Sign out</button>
             <p class="hint">
-              The session lasts 12 hours, then the login screen comes back.
-              PINs are stored as SHA-256 hashes in this browser only.
+              The session lasts 12 hours, then the sign-in screen comes back.
+              Passwords are stored as salted PBKDF2 hashes in this browser only.
             </p>
           </div>
         </div>
@@ -283,14 +309,17 @@
     </div>
   </div>
 
-  <script src="js/status.js?v=2026.11.24.4"></script>
-  <script src="js/store.js?v=2026.11.24.4"></script>
-  <script src="js/ui.js?v=2026.11.24.4"></script>
-  <script src="js/detection.js?v=2026.11.24.4"></script>
-  <script src="js/auth.js?v=2026.11.24.4"></script>
-  <script src="js/admin.js?v=2026.11.24.4"></script>
+  <script src="js/status.js?v=2026.11.25.1"></script>
+  <script src="js/store.js?v=2026.11.25.1"></script>
+  <script src="js/ui.js?v=2026.11.25.1"></script>
+  <script src="js/detection.js?v=2026.11.25.1"></script>
+  <script src="js/auth.js?v=2026.11.25.1"></script>
+  <script src="js/admin.js?v=2026.11.25.1"></script>
 </body>
 </html>
+
+
+
 
 
 

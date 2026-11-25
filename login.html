@@ -11,7 +11,7 @@
 
   <script>
   (function () {
-    var BUILD = '2026.11.24.4';
+    var BUILD = '2026.11.25.1';
     var KEY = 'netsight_build';
     var seen = null;
     try { seen = localStorage.getItem(KEY); } catch (e) {}
@@ -33,21 +33,14 @@
   </script>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/netsight-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css?v=2026.11.24.4">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.25.1">
 
-  <script src="js/config.js?v=2026.11.24.4"></script>
-  <script src="js/theme.js?v=2026.11.24.4"></script>
+  <script src="js/config.js?v=2026.11.25.1"></script>
+  <script src="js/theme.js?v=2026.11.25.1"></script>
 </head>
 <body data-page="login">
 
-  <div class="toast-container" id="toast-container"></div>
-  <div id="modal-overlay" class="modal-overlay" hidden></div>
-  <div id="loading-overlay" class="loading-overlay" hidden>
-    <div class="loading-overlay__card">
-      <div class="spinner"></div>
-      <p id="loading-message">Signing in…</p>
-    </div>
-  </div>
+  <div id="toast-container" class="toast-container"></div>
 
   <main class="login">
 
@@ -57,29 +50,75 @@
       <p class="login__tagline">Fishing gear reporting · Riga waterways</p>
     </header>
 
-    <form class="login__card" id="login-form" autocomplete="off" novalidate>
+    <div class="login__card">
 
-      <p class="login__step">Sign in as</p>
+      <div class="auth-tabs" role="tablist">
+        <button type="button" class="auth-tab is-active" data-auth-tab="login" role="tab">
+          Sign in
+        </button>
+        <button type="button" class="auth-tab" data-auth-tab="register" role="tab">
+          Create account
+        </button>
+      </div>
 
-      <div class="roles" id="roles" role="radiogroup" aria-label="Choose your role"></div>
-
-      <div class="login__pin" id="pin-block" hidden>
+      <!-- ---------------- LOGIN ---------------- -->
+      <form id="form-login" class="auth-form" autocomplete="on" novalidate>
         <label class="field">
-          <span class="field__label" id="pin-label">PIN</span>
-          <input class="input input--pin" id="login-pin" type="password" inputmode="numeric"
-                 autocomplete="off" placeholder="••••" aria-describedby="login-error">
+          <span class="field__label">Username</span>
+          <input class="input" id="login-username" type="text" name="username"
+                 autocomplete="username" spellcheck="false" autocapitalize="none"
+                 placeholder="your username">
         </label>
 
-        <p class="login__error" id="login-error" hidden></p>
+        <label class="field">
+          <span class="field__label">Password</span>
+          <input class="input" id="login-password" type="password" name="password"
+                 autocomplete="current-password" placeholder="••••••••">
+        </label>
+
+        <p class="auth-error" id="login-error" hidden></p>
 
         <button type="submit" class="btn btn--primary btn--lg btn--block" id="login-submit">
           Sign in
         </button>
-      </div>
+      </form>
 
-      <p class="login__hint" id="login-hint" hidden></p>
+      <!-- ---------------- REGISTER ---------------- -->
+      <form id="form-register" class="auth-form" autocomplete="on" novalidate hidden>
+        <label class="field">
+          <span class="field__label">Username</span>
+          <input class="input" id="reg-username" type="text" name="username"
+                 autocomplete="username" spellcheck="false" autocapitalize="none"
+                 placeholder="3–24 characters">
+        </label>
 
-    </form>
+        <label class="field">
+          <span class="field__label">Password</span>
+          <input class="input" id="reg-password" type="password" name="new-password"
+                 autocomplete="new-password" placeholder="at least 6 characters">
+        </label>
+
+        <label class="field">
+          <span class="field__label">Repeat password</span>
+          <input class="input" id="reg-password2" type="password" name="new-password"
+                 autocomplete="new-password" placeholder="••••••••">
+        </label>
+
+        <p class="auth-hint">
+          Letters and numbers, at least 6 characters. New accounts start as a
+          normal user — an administrator can promote you to Water Patrol.
+        </p>
+
+        <p class="auth-error" id="reg-error" hidden></p>
+
+        <button type="submit" class="btn btn--primary btn--lg btn--block" id="reg-submit">
+          Create account
+        </button>
+      </form>
+
+      <p class="auth-note" id="seed-note" hidden></p>
+
+    </div>
 
     <footer class="login__footer">
       <button type="button" class="icon-btn icon-btn--ghost" data-theme-toggle aria-label="Theme">
@@ -93,141 +132,134 @@
 
   </main>
 
-  <script src="js/ui.js?v=2026.11.24.4"></script>
-  <script src="js/auth.js?v=2026.11.24.4"></script>
+  <script src="js/auth.js?v=2026.11.25.1"></script>
   <script>
   (function () {
     'use strict';
 
-    let selected = null;
+    const loginForm = document.getElementById('form-login');
+    const registerForm = document.getElementById('form-register');
+    const loginError = document.getElementById('login-error');
+    const registerError = document.getElementById('reg-error');
+    const seedNote = document.getElementById('seed-note');
 
-    const rolesEl = document.getElementById('roles');
-    const pinBlock = document.getElementById('pin-block');
-    const pinInput = document.getElementById('login-pin');
-    const pinLabel = document.getElementById('pin-label');
-    const errorEl = document.getElementById('login-error');
-    const hintEl = document.getElementById('login-hint');
-    const form = document.getElementById('login-form');
-    const submit = document.getElementById('login-submit');
+    // ------------------------------------------------------------- tabs
 
-    function say(message) {
-      errorEl.textContent = message;
-      errorEl.hidden = !message;
-    }
+    document.querySelectorAll('[data-auth-tab]').forEach(tab => {
+      tab.addEventListener('click', () => {
+        const target = tab.dataset.authTab;
 
-    function renderRoles() {
-      rolesEl.innerHTML = Auth.roles().map(r => `
-        <button type="button" class="role" data-role="${r.id}" role="radio" aria-checked="false">
-          <span class="role__icon">${icon(r.icon)}</span>
-          <span class="role__text">
-            <span class="role__label">${r.label}</span>
-            <span class="role__desc">${r.desc}</span>
-          </span>
-          <span class="role__check" aria-hidden="true"></span>
-        </button>
-      `).join('');
+        document.querySelectorAll('[data-auth-tab]').forEach(t => {
+          t.classList.toggle('is-active', t.dataset.authTab === target);
+        });
 
-      rolesEl.querySelectorAll('[data-role]').forEach(btn => {
-        btn.addEventListener('click', () => select(btn.dataset.role));
+        loginForm.hidden = target !== 'login';
+        registerForm.hidden = target !== 'register';
+
+        say(loginError, '');
+        say(registerError, '');
+
+        const first = (target === 'login' ? loginForm : registerForm)
+          .querySelector('input');
+        if (first) first.focus();
       });
-    }
-
-    function icon(name) {
-      const paths = {
-        anchor: '<circle cx="12" cy="5" r="2.5"></circle><path d="M12 7.5V21M5 13a7 7 0 0 0 14 0M5 13H3M19 13h2"></path>',
-        shield: '<path d="M12 3l7 3v6c0 4.5-3 7.7-7 9-4-1.3-7-4.5-7-9V6z"></path><path d="M9.5 12.5l1.8 1.8 3.4-3.6"></path>',
-        gear: '<circle cx="12" cy="12" r="3"></circle><path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"></path>'
-      };
-      return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
-        stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">${paths[name] || paths.gear}</svg>`;
-    }
-
-    function select(id) {
-      selected = id;
-      say('');
-
-      rolesEl.querySelectorAll('[data-role]').forEach(btn => {
-        const on = btn.dataset.role === id;
-        btn.classList.toggle('is-selected', on);
-        btn.setAttribute('aria-checked', String(on));
-      });
-
-      const role = Auth.role(id);
-      pinLabel.textContent = role ? role.label + ' PIN' : 'PIN';
-      pinBlock.hidden = false;
-      pinInput.value = '';
-      pinInput.focus();
-    }
-
-    form.addEventListener('submit', async e => {
-      e.preventDefault();
-
-      if (!selected) {
-        say('Choose a role first');
-        return;
-      }
-
-      const pin = pinInput.value.trim();
-      if (!pin) {
-        say('Enter your PIN');
-        pinInput.focus();
-        return;
-      }
-
-      submit.disabled = true;
-      document.getElementById('loading-overlay').hidden = false;
-      document.getElementById('loading-overlay').classList.add('loading-overlay--visible');
-
-      const result = await Auth.login(selected, pin);
-
-      if (!result.ok) {
-        submit.disabled = false;
-        const overlay = document.getElementById('loading-overlay');
-        overlay.classList.remove('loading-overlay--visible');
-        overlay.hidden = true;
-
-        say(result.message);
-        pinInput.value = '';
-        pinInput.focus();
-        return;
-      }
-
-      location.replace(Auth.pageFor(selected));
     });
 
-    // Already signed in? Go straight to that role's page.
-    const existing = Auth.current();
-    renderRoles();
-
-    if (Auth.usingDefaultPins()) {
-      hintEl.hidden = false;
-      hintEl.innerHTML = 'Demo PINs — ' + Auth.defaultPins()
-        .map(r => `${r.label} <b>${r.pin}</b>`)
-        .join(' · ');
+    function say(el, message) {
+      el.textContent = message;
+      el.hidden = !message;
     }
 
-    if (existing) {
-      select(existing.role);
-      pinInput.value = '';
-      pinInput.placeholder = 'already signed in as ' + existing.label;
-      hintEl.hidden = false;
-      hintEl.innerHTML = 'You are signed in as <b>' + existing.label +
-        '</b>. Continue, or sign in as someone else.';
-      submit.textContent = 'Continue as ' + existing.label;
-
-      submit.addEventListener('click', () => {
-        if (!pinInput.value.trim()) {
-          location.replace(Auth.pageFor(existing.role));
-        }
-      }, { once: true });
+    function busy(form, on) {
+      const btn = form.querySelector('button[type="submit"]');
+      if (btn) btn.disabled = on;
     }
 
-    Theme.init();
+    // ------------------------------------------------------------ login
+
+    loginForm.addEventListener('submit', async e => {
+      e.preventDefault();
+      say(loginError, '');
+
+      const username = document.getElementById('login-username').value.trim();
+      const password = document.getElementById('login-password').value;
+
+      if (!username || !password) {
+        say(loginError, 'Enter your username and password');
+        return;
+      }
+
+      busy(loginForm, true);
+
+      const result = await Auth.login(username, password);
+
+      if (!result.ok) {
+        busy(loginForm, false);
+        say(loginError, result.message);
+        document.getElementById('login-password').value = '';
+        document.getElementById('login-password').focus();
+        return;
+      }
+
+      location.replace(Auth.pageFor(result.session.role));
+    });
+
+    // --------------------------------------------------------- register
+
+    registerForm.addEventListener('submit', async e => {
+      e.preventDefault();
+      say(registerError, '');
+
+      const username = document.getElementById('reg-username').value.trim();
+      const password = document.getElementById('reg-password').value;
+      const confirm = document.getElementById('reg-password2').value;
+
+      if (!username || !password || !confirm) {
+        say(registerError, 'Fill in all three fields');
+        return;
+      }
+
+      busy(registerForm, true);
+
+      const result = await Auth.register(username, password, confirm);
+
+      if (!result.ok) {
+        busy(registerForm, false);
+        say(registerError, result.message);
+        return;
+      }
+
+      location.replace(Auth.pageFor(result.session.role));
+    });
+
+    // ------------------------------------------------------------- boot
+
+    (async function boot() {
+      Theme.init();
+      await Auth.seed();
+
+      const existing = Auth.current();
+      if (existing) {
+        location.replace(Auth.pageFor(existing.role));
+        return;
+      }
+
+      // Show the seeded administrator once, so the first run is not a dead end.
+      const users = Auth.listUsers();
+      const onlySeedAdmin = users.length === 1 && users[0].role === 'admin';
+
+      if (onlySeedAdmin) {
+        seedNote.hidden = false;
+        seedNote.innerHTML =
+          'First run — sign in as <b>admin</b> with password <b>admin123</b>, ' +
+          'then change it in Admin → Security.';
+      }
+
+      document.getElementById('login-username').focus();
+    })();
   })();
   </script>
 </body>
 </html>
-
-
 
 

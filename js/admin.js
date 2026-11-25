@@ -20,14 +20,13 @@ const Admin = (function() {
     bindTabs();
     bindPoints();
     bindProviders();
+    bindUsers();
     bindSecurity();
 
     await loadPoints();
     renderProviders();
     syncDetection();
 
-    document.getElementById('btn-lock')?.addEventListener('click', lock);
-    document.getElementById('btn-lock-2')?.addEventListener('click', lock);
   }
 
   function bindTabs() {
@@ -211,6 +210,7 @@ const Admin = (function() {
       await StoreModule.deleteSightingUnified(id);
       selected.delete(id);
       await loadPoints();
+    renderUsers();
       UIModule.showToast('Point deleted', 'success');
     } catch (err) {
       console.error('Delete failed:', err);
@@ -235,6 +235,7 @@ const Admin = (function() {
       const result = await StoreModule.deleteManyUnified(ids);
       selected.clear();
       await loadPoints();
+    renderUsers();
       UIModule.showToast(`Deleted ${result.deleted} point(s)`, 'success');
     } catch (err) {
       console.error('Bulk delete failed:', err);
@@ -256,6 +257,7 @@ const Admin = (function() {
       const result = await StoreModule.deleteAllUnified();
       selected.clear();
       await loadPoints();
+    renderUsers();
       UIModule.showToast(`Removed ${result.deleted} point(s)`, 'success');
     } catch (err) {
       UIModule.showToast(err.message, 'error');
@@ -409,31 +411,147 @@ const Admin = (function() {
       (Number(el.max) - Number(el.min))) * 100;
     el.style.setProperty('--fill', pct + '%');
   }
+  // ---------------------------------------------------------------- users
+
+  function renderUsers() {
+    const host = document.getElementById('users-list');
+    const empty = document.getElementById('users-empty');
+    const count = document.getElementById('user-count');
+    if (!host) return;
+
+    const users = Auth.listUsers();
+    const me = Auth.current();
+
+    if (count) count.textContent = users.length + (users.length === 1 ? ' account' : ' accounts');
+
+    if (!users.length) {
+      host.innerHTML = '';
+      if (empty) empty.hidden = false;
+      return;
+    }
+
+    if (empty) empty.hidden = true;
+
+    host.innerHTML = users.map(u => {
+      const isMe = me && me.username === u.username;
+      const role = Auth.roleInfo(u.role);
+
+      const options = Auth.allRoles().map(r =>
+        `<option value="${r.id}"${r.id === u.role ? ' selected' : ''}>${UIModule.escapeHtml(r.label)}</option>`
+      ).join('');
+
+      return `
+        <article class="user${isMe ? ' user--me' : ''}" data-user="${UIModule.escapeHtml(u.username)}">
+          <div class="user__avatar" data-role="${u.role}">
+            ${UIModule.escapeHtml((u.displayName || u.username).slice(0, 1).toUpperCase())}
+          </div>
+
+          <div class="user__body">
+            <div class="user__name">
+              ${UIModule.escapeHtml(u.displayName || u.username)}
+              ${isMe ? '<span class="user__you">you</span>' : ''}
+            </div>
+            <div class="user__meta">
+              <span class="status-badge status-badge--${u.role === 'admin' ? 'reported' : u.role === 'patrol' ? 'checked' : 'new'}">
+                ${UIModule.escapeHtml(role ? role.label : u.role)}
+              </span>
+              <span class="user__since">joined ${UIModule.escapeHtml(shortDate(u.createdAt))}</span>
+            </div>
+          </div>
+
+          <div class="user__actions">
+            <label class="select-wrapper">
+              <span class="visually-hidden">Role for ${UIModule.escapeHtml(u.username)}</span>
+              <select class="input form-select--sm" data-role-select="${UIModule.escapeHtml(u.username)}">
+                ${options}
+              </select>
+            </label>
+            <button type="button" class="btn btn--danger btn--sm"
+                    data-user-delete="${UIModule.escapeHtml(u.username)}"
+                    ${isMe ? 'disabled title="You cannot delete your own account"' : ''}>
+              Delete
+            </button>
+          </div>
+        </article>`;
+    }).join('');
+
+    host.querySelectorAll('[data-role-select]').forEach(sel => {
+      sel.addEventListener('change', () => {
+        const result = Auth.setRole(sel.dataset.roleSelect, sel.value);
+
+        if (!result.ok) {
+          UIModule.showToast(result.message, 'error');
+          renderUsers();
+          return;
+        }
+
+        UIModule.showToast(
+          `${sel.dataset.roleSelect} is now ${Auth.roleLabel(sel.value)}`,
+          'success'
+        );
+        renderUsers();
+      });
+    });
+
+    host.querySelectorAll('[data-user-delete]').forEach(btn => {
+      btn.addEventListener('click', () => removeUser(btn.dataset.userDelete));
+    });
+  }
+
+  async function removeUser(username) {
+    const ok = await UIModule.confirm(
+      `Delete the account “${username}”? They will be signed out and cannot sign back in.`,
+      { title: 'Delete account', confirmLabel: 'Delete', danger: true }
+    );
+    if (!ok) return;
+
+    const result = Auth.deleteUser(username);
+
+    if (!result.ok) {
+      UIModule.showToast(result.message, 'error');
+      return;
+    }
+
+    UIModule.showToast('Account deleted', 'success');
+    renderUsers();
+  }
+
+  function shortDate(iso) {
+    const d = new Date(iso);
+    if (!Number.isFinite(d.getTime())) return '—';
+    return d.toLocaleDateString(undefined, { day: 'numeric', month: 'short' });
+  }
+
+  function bindUsers() {
+    renderUsers();
+  }
+
   // -------------------------------------------------------------- security
 
   function bindSecurity() {
-    document.getElementById('btn-change-pin')?.addEventListener('click', async () => {
-      const oldPin = document.getElementById('pin-old').value.trim();
-      const next = document.getElementById('pin-new').value.trim();
-      const again = document.getElementById('pin-new2').value.trim();
-      const status = document.getElementById('pin-status');
+    document.getElementById('btn-change-pw')?.addEventListener('click', async () => {
+      const session = Auth.current();
+      if (!session) return;
+
+      const current = document.getElementById('pw-old').value;
+      const next = document.getElementById('pw-new').value;
+      const again = document.getElementById('pw-new2').value;
+      const status = document.getElementById('pw-status');
 
       const say = (msg, tone) => {
         status.textContent = msg;
         status.dataset.tone = tone;
       };
 
-      if (!(await Auth.verifyPin('admin', oldPin))) return say('Current PIN is wrong', 'error');
-      if (next.length < 4) return say('New PIN must be at least 4 characters', 'error');
-      if (next !== again) return say('The two new PINs do not match', 'error');
+      const result = await Auth.changePassword(session.username, current, next, again);
 
-      await Auth.setPin('admin', next);
+      if (!result.ok) return say(result.message, 'error');
 
-      document.getElementById('pin-old').value = '';
-      document.getElementById('pin-new').value = '';
-      document.getElementById('pin-new2').value = '';
-      say('PIN updated', 'ok');
-      UIModule.showToast('PIN updated', 'success');
+      document.getElementById('pw-old').value = '';
+      document.getElementById('pw-new').value = '';
+      document.getElementById('pw-new2').value = '';
+      say('Password updated', 'ok');
+      UIModule.showToast('Password updated', 'success');
     });
   }
 
@@ -450,3 +568,6 @@ const Admin = (function() {
 
 document.addEventListener('DOMContentLoaded', () => Admin.init());
 window.Admin = Admin;
+
+
+

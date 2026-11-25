@@ -2,7 +2,7 @@
 
 // Build stamp — bump this on every release. It is used to bust browser caches
 // (asset query strings) and to purge stale service workers.
-const NETSIGHT_BUILD = '2026.11.24.4';
+const NETSIGHT_BUILD = '2026.11.25.1';
 
 const CONFIG = {
   BUILD: NETSIGHT_BUILD,
@@ -68,47 +68,37 @@ const CONFIG = {
     unknown: []
   },
 
-  // ------------------------------------------------------------------ admin
-  ADMIN: {
-    // Change the PIN in Admin -> Security. Stored as a SHA-256 hash locally.
-    defaultPin: '2468',
-    sessionKey: 'netsight_admin_session',
-    pinKey: 'netsight_admin_pin'
-  },
-
   // ------------------------------------------------------------------- auth
-  // One login at the start of the app. The chosen role decides which page
-  // you land on and which tabs that page shows. PINs are per role and stored
-  // as SHA-256 hashes in this browser only.
+  // Username + password accounts, kept in this browser. The account's role
+  // decides which page it lands on. Administrators can promote a user to
+  // Water Patrol from Admin -> Users.
   AUTH: {
+    usersKey: 'netsight_users',
     sessionKey: 'netsight_session',
-    pinPrefix: 'netsight_pin_',
-    changedFlag: 'netsight_pins_changed',
     ttlHours: 12,
+
+    // Created automatically the first time the app runs in a browser.
+    // Change the password after your first sign-in.
+    seedAdmin: {
+      username: 'admin',
+      password: 'admin123'
+    },
+
     roles: {
-      boater: {
-        label: 'Boater',
-        short: 'Boater',
+      user: {
+        label: 'User',
         page: 'index.html',
-        defaultPin: '1111',
-        desc: 'Report fishing gear you spot on the water',
-        icon: 'anchor'
+        desc: 'Report gear you spot on the water'
       },
       patrol: {
         label: 'Water Patrol',
-        short: 'Patrol',
         page: 'patrol.html',
-        defaultPin: '2222',
-        desc: 'Work the case list and update what you find',
-        icon: 'shield'
+        desc: 'Work the case list — assigned by an administrator'
       },
       admin: {
         label: 'Administrator',
-        short: 'Admin',
         page: 'admin.html',
-        defaultPin: '2468',
-        desc: 'Manage points, the model and who gets in',
-        icon: 'gear'
+        desc: 'Manage points, the model and who gets in'
       }
     }
   },
@@ -123,5 +113,8 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.CONFIG = CONFIG;
 }
+
+
+
 
 

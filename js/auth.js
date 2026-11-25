@@ -1,95 +1,210 @@
-// NetSight Auth
+// NetSight Auth — username + password accounts
 //
-// One login for the whole app. The role picked here decides which page opens
-// and which tabs that page shows. PINs are per role and kept as SHA-256 hashes
-// in this browser — there is no server and no user database.
+// There is no server. Accounts live in this browser's localStorage with a
+// salted PBKDF2 hash per user. The account decides the role, and the role
+// decides which page you get:
 //
-// This is a prototype lock, not real authentication: anyone with devtools can
-// read the session. It is here to route three kinds of user to three different
-// screens, nothing more.
+//   user   -> index.html    report gear, browse the map
+//   patrol -> patrol.html   work the case list (given by an admin)
+//   admin  -> admin.html    everything, including who is what
+//
+// This is a prototype lock — it routes people to the right screen. It is not a
+// substitute for real server-side authentication.
 
 const Auth = (function() {
   'use strict';
 
   const CFG = CONFIG.AUTH;
+  const USERS_KEY = CFG.usersKey;
   const SESSION_KEY = CFG.sessionKey;
-  const PIN_PREFIX = CFG.pinPrefix;
-  const CHANGED_FLAG = CFG.changedFlag;
 
-  // ------------------------------------------------------------- hashing
+  const ROLES = CFG.roles;
+  const ROLE_ORDER = ['user', 'patrol', 'admin'];
 
-  async function sha256(text) {
-    const bytes = new TextEncoder().encode(String(text));
-    const digest = await crypto.subtle.digest('SHA-256', bytes);
-    return Array.from(new Uint8Array(digest))
+  // PBKDF2-SHA256, ~120k iterations: slow enough that a stolen hash is not
+  // trivially reversible, fast enough (~60 ms) to feel instant.
+  const ITERATIONS = 120000;
+
+  // ---------------------------------------------------------------- crypto
+
+  function toHex(buffer) {
+    return Array.from(new Uint8Array(buffer))
       .map(b => b.toString(16).padStart(2, '0'))
       .join('');
   }
 
-  // ------------------------------------------------------------- roles
-
-  function roleIds() {
-    return Object.keys(CFG.roles);
+  function fromHex(hex) {
+    const out = new Uint8Array(hex.length / 2);
+    for (let i = 0; i < out.length; i++) {
+      out[i] = parseInt(hex.substr(i * 2, 2), 16);
+    }
+    return out;
   }
 
-  function roles() {
-    return roleIds().map(id => Object.assign({ id }, CFG.roles[id]));
+  function randomSalt() {
+    const bytes = new Uint8Array(16);
+    crypto.getRandomValues(bytes);
+    return toHex(bytes);
   }
 
-  function role(id) {
-    return CFG.roles[id] || null;
+  async function derive(password, saltHex) {
+    const baseKey = await crypto.subtle.importKey(
+      'raw',
+      new TextEncoder().encode(String(password)),
+      'PBKDF2',
+      false,
+      ['deriveBits']
+    );
+
+    const bits = await crypto.subtle.deriveBits(
+      {
+        name: 'PBKDF2',
+        salt: fromHex(saltHex),
+        iterations: ITERATIONS,
+        hash: 'SHA-256'
+      },
+      baseKey,
+      256
+    );
+
+    return toHex(bits);
   }
 
-  function pageFor(id) {
-    const r = role(id);
-    return r ? r.page : 'login.html';
+  // --------------------------------------------------------------- storage
+
+  function readUsers() {
+    try {
+      const raw = localStorage.getItem(USERS_KEY);
+      if (!raw) return [];
+      const parsed = JSON.parse(raw);
+      return Array.isArray(parsed) ? parsed : [];
+    } catch {
+      return [];
+    }
   }
 
-  function label(id) {
-    const r = role(id);
-    return r ? r.label : 'Unknown';
+  function writeUsers(users) {
+    localStorage.setItem(USERS_KEY, JSON.stringify(users));
   }
 
-  // ------------------------------------------------------------- pin store
-
-  async function pinHash(id) {
-    const stored = localStorage.getItem(PIN_PREFIX + id);
-    if (stored) return stored;
-
-    // Seed from the documented default the first time this browser sees a role
-    const r = role(id);
-    if (!r) return null;
-
-    const hash = await sha256(r.defaultPin);
-    localStorage.setItem(PIN_PREFIX + id, hash);
-    return hash;
+  function normalise(name) {
+    return String(name || '').trim().toLowerCase();
   }
 
-  async function verifyPin(id, pin) {
-    const expected = await pinHash(id);
-    if (!expected) return false;
-    return (await sha256(pin)) === expected;
+  function findUser(name) {
+    const key = normalise(name);
+    return readUsers().find(u => u.username === key) || null;
   }
 
-  async function setPin(id, pin) {
-    if (!role(id)) throw new Error('Unknown role: ' + id);
-    if (String(pin).length < 4) throw new Error('PIN must be at least 4 characters');
+  // ---------------------------------------------------------------- seeding
 
-    localStorage.setItem(PIN_PREFIX + id, await sha256(pin));
-    localStorage.setItem(CHANGED_FLAG, '1');
-    return true;
+  let seeded = false;
+
+  // Make sure there is always a way in. Runs once per browser.
+  async function seed() {
+    if (seeded) return;
+    seeded = true;
+
+    if (readUsers().length > 0) return;
+
+    const seedAdmin = CFG.seedAdmin;
+    const salt = randomSalt();
+
+    writeUsers([{
+      username: normalise(seedAdmin.username),
+      displayName: seedAdmin.username,
+      salt,
+      hash: await derive(seedAdmin.password, salt),
+      role: 'admin',
+      createdAt: new Date().toISOString()
+    }]);
   }
 
-  // True while every role still uses its documented demo PIN
-  function usingDefaultPins() {
-    return localStorage.getItem(CHANGED_FLAG) !== '1';
+  // ------------------------------------------------------------- password
+
+  async function hashFor(password, salt) {
+    return derive(password, salt);
   }
 
-  function defaultPins() {
-    return roles().map(r => ({ id: r.id, label: r.label, pin: r.defaultPin }));
+  function checkPasswordRules(password) {
+    const value = String(password || '');
+    if (value.length < 6) return 'Password must be at least 6 characters';
+    if (!/[a-zA-Z]/.test(value) || !/[0-9]/.test(value)) {
+      return 'Password must contain letters and numbers';
+    }
+    return null;
   }
 
-  // ------------------------------------------------------------- session
+  function checkUsernameRules(username) {
+    const value = String(username || '').trim();
+    if (value.length < 3) return 'Username must be at least 3 characters';
+    if (value.length > 24) return 'Username must be at most 24 characters';
+    if (!/^[a-zA-Z0-9._-]+$/.test(value)) {
+      return 'Username may only use letters, numbers, dot, dash and underscore';
+    }
+    return null;
+  }
+
+  // ---------------------------------------------------------------- register
+
+  async function register(username, password, confirm) {
+    await seed();
+
+    const name = String(username || '').trim();
+    const usernameError = checkUsernameRules(name);
+    if (usernameError) return { ok: false, message: usernameError };
+
+    if (password !== confirm) return { ok: false, message: 'The two passwords do not match' };
+
+    const passwordError = checkPasswordRules(password);
+    if (passwordError) return { ok: false, message: passwordError };
+
+    if (findUser(name)) return { ok: false, message: 'That username is taken' };
+
+    const users = readUsers();
+    const salt = randomSalt();
+
+    users.push({
+      username: normalise(name),
+      displayName: name,
+      salt,
+      hash: await hashFor(password, salt),
+      role: 'user',              // everyone starts as a normal user
+      createdAt: new Date().toISOString()
+    });
+
+    writeUsers(users);
+
+    return { ok: true, session: startSession(findUser(name)) };
+  }
+
+  // ------------------------------------------------------------------ login
+
+  async function login(username, password) {
+    await seed();
+
+    const user = findUser(username);
+    if (!user) return { ok: false, message: 'No account with that username' };
+
+    const hash = await hashFor(password, user.salt);
+    if (hash !== user.hash) return { ok: false, message: 'Wrong password' };
+
+    return { ok: true, session: startSession(user) };
+  }
+
+  function startSession(user) {
+    const session = {
+      username: user.username,
+      displayName: user.displayName || user.username,
+      role: user.role,
+      at: Date.now()
+    };
+
+    localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    return session;
+  }
+
+  // ---------------------------------------------------------------- session
 
   function readSession() {
     let raw = null;
@@ -99,7 +214,7 @@ const Auth = (function() {
     let session;
     try { session = JSON.parse(raw); } catch { return null; }
 
-    if (!session || !role(session.role)) return null;
+    if (!session || !session.username || !ROLES[session.role]) return null;
 
     const age = Date.now() - Number(session.at || 0);
     if (!Number.isFinite(age) || age > CFG.ttlHours * 3600 * 1000) {
@@ -107,38 +222,22 @@ const Auth = (function() {
       return null;
     }
 
+    // The account may have been deleted or demoted while the tab was open
+    const user = findUser(session.username);
+    if (!user) {
+      clearSession();
+      return null;
+    }
+    if (user.role !== session.role) {
+      session.role = user.role;
+      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
+    }
+
     return session;
   }
 
   function current() {
     return readSession();
-  }
-
-  function currentRole() {
-    const s = readSession();
-    return s ? s.role : null;
-  }
-
-  async function login(id, pin) {
-    if (!role(id)) return { ok: false, message: 'Pick a role first' };
-
-    if (!(await verifyPin(id, pin))) {
-      return { ok: false, message: 'Wrong PIN' };
-    }
-
-    const session = {
-      role: id,
-      label: label(id),
-      at: Date.now()
-    };
-
-    try {
-      localStorage.setItem(SESSION_KEY, JSON.stringify(session));
-    } catch {
-      return { ok: false, message: 'Could not start a session in this browser' };
-    }
-
-    return { ok: true, session };
   }
 
   function clearSession() {
@@ -150,8 +249,7 @@ const Auth = (function() {
     location.replace('login.html');
   }
 
-  // Guard for a page. Redirects to the login screen when there is no session,
-  // and to the role's own page when the session belongs to someone else.
+  // Page guard: no session -> login, wrong role -> that role's own page.
   function require(allowedRoles) {
     const session = readSession();
 
@@ -168,19 +266,131 @@ const Auth = (function() {
     return session;
   }
 
-  // ------------------------------------------------------------- chrome
+  // ------------------------------------------------------------------ roles
 
-  // Fills the role chip and wires every sign-out control on the page.
+  function pageFor(roleId) {
+    const r = ROLES[roleId];
+    return r ? r.page : 'login.html';
+  }
+
+  function roleInfo(roleId) {
+    return ROLES[roleId] || null;
+  }
+
+  function roleLabel(roleId) {
+    const r = ROLES[roleId];
+    return r ? r.label : 'Unknown';
+  }
+
+  function allRoles() {
+    return ROLE_ORDER.map(id => Object.assign({ id }, ROLES[id]));
+  }
+
+  // ------------------------------------------------------------ user admin
+
+  function listUsers() {
+    return readUsers()
+      .slice()
+      .sort((a, b) => {
+        const rank = ROLE_ORDER.indexOf(b.role) - ROLE_ORDER.indexOf(a.role);
+        if (rank !== 0) return rank;
+        return String(a.username).localeCompare(String(b.username));
+      })
+      .map(u => ({
+        username: u.username,
+        displayName: u.displayName || u.username,
+        role: u.role,
+        createdAt: u.createdAt
+      }));
+  }
+
+  function countAdmins() {
+    return readUsers().filter(u => u.role === 'admin').length;
+  }
+
+  function setRole(username, role) {
+    const me = readSession();
+    if (!me || me.role !== 'admin') return { ok: false, message: 'Administrators only' };
+    if (!ROLES[role]) return { ok: false, message: 'Unknown role' };
+
+    const users = readUsers();
+    const user = users.find(u => u.username === normalise(username));
+    if (!user) return { ok: false, message: 'No such user' };
+
+    if (user.role === 'admin' && role !== 'admin' && countAdmins() <= 1) {
+      return { ok: false, message: 'That is the last administrator' };
+    }
+
+    user.role = role;
+    writeUsers(users);
+
+    return { ok: true, user: { username: user.username, role } };
+  }
+
+  function deleteUser(username) {
+    const me = readSession();
+    if (!me || me.role !== 'admin') return { ok: false, message: 'Administrators only' };
+
+    const key = normalise(username);
+    if (me.username === key) return { ok: false, message: 'You cannot delete your own account' };
+
+    const users = readUsers();
+    const user = users.find(u => u.username === key);
+    if (!user) return { ok: false, message: 'No such user' };
+
+    if (user.role === 'admin' && countAdmins() <= 1) {
+      return { ok: false, message: 'That is the last administrator' };
+    }
+
+    writeUsers(users.filter(u => u.username !== key));
+    return { ok: true };
+  }
+
+  async function changePassword(username, currentPassword, nextPassword, confirm) {
+    await seed();
+
+    const user = findUser(username);
+    if (!user) return { ok: false, message: 'No such user' };
+
+    if (currentPassword !== undefined && currentPassword !== null) {
+      const hash = await hashFor(currentPassword, user.salt);
+      if (hash !== user.hash) return { ok: false, message: 'Current password is wrong' };
+    }
+
+    if (nextPassword !== confirm) return { ok: false, message: 'The two passwords do not match' };
+
+    const ruleError = checkPasswordRules(nextPassword);
+    if (ruleError) return { ok: false, message: ruleError };
+
+    const users = readUsers();
+    const target = users.find(u => u.username === user.username);
+
+    target.salt = randomSalt();
+    target.hash = await hashFor(nextPassword, target.salt);
+    writeUsers(users);
+
+    return { ok: true };
+  }
+
+  // ---------------------------------------------------------------- chrome
+
+  // Fills every [data-user-name] / [data-role-label] and wires sign-out.
   function mount(session) {
     const s = session || readSession();
     if (!s) return;
 
+    const name = s.displayName || s.username;
+
+    document.querySelectorAll('[data-user-name]').forEach(el => {
+      el.textContent = name;
+    });
+
     document.querySelectorAll('[data-role-label]').forEach(el => {
-      el.textContent = s.label;
+      el.textContent = roleLabel(s.role);
     });
 
     document.querySelectorAll('[data-role-short]').forEach(el => {
-      el.textContent = role(s.role) ? role(s.role).short : s.label;
+      el.textContent = name;
     });
 
     document.body.dataset.role = s.role;
@@ -194,22 +404,24 @@ const Auth = (function() {
   }
 
   return {
-    roles,
-    roleIds,
-    role,
-    label,
-    pageFor,
+    seed,
+    register,
     login,
     logout,
     current,
-    currentRole,
     require,
     mount,
-    verifyPin,
-    setPin,
-    usingDefaultPins,
-    defaultPins,
-    clearSession
+    clearSession,
+    pageFor,
+    roleInfo,
+    roleLabel,
+    allRoles,
+    listUsers,
+    setRole,
+    deleteUser,
+    changePassword,
+    checkPasswordRules,
+    checkUsernameRules
   };
 })();
 

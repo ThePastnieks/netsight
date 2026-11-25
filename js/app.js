@@ -14,7 +14,7 @@ const App = (function() {
 
   async function init() {
     // Every page sits behind the same login. This one is the boater's home.
-    const session = Auth.require(['boater', 'patrol', 'admin']);
+    const session = Auth.require(['user', 'patrol', 'admin']);
     if (!session) return;
 
     Theme.init();
@@ -435,6 +435,7 @@ const App = (function() {
 
 document.addEventListener('DOMContentLoaded', () => App.init());
 window.App = App;
+
 
 
 
