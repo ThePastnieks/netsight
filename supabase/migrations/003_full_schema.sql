@@ -315,6 +315,52 @@ begin
 end $$;
 
 
+
+-- ========================================================= registered gear
+--
+-- A fisherman registers a net before setting it; the code he gets is what he
+-- writes on the buoy. When someone reports that net, the app can say whose it
+-- is instead of treating a legal net as abandoned gear.
+--
+-- Every signed-in account may read it: a patrol standing over a net needs to
+-- know whether it is registered, and a reporter needs to see the owner.
+
+create table if not exists public.registered_gear (
+  id           uuid primary key default gen_random_uuid(),
+  code         text not null unique,
+  label        text not null,
+  gear_type    text not null default 'net'
+                 check (gear_type in ('net', 'trap', 'buoy', 'float')),
+  owner_id     uuid not null references public.profiles(id) on delete cascade,
+  owner_name   text not null,
+  span         jsonb,
+  lat          double precision,
+  lon          double precision,
+  valid_until  timestamptz,
+  created_at   timestamptz not null default now()
+);
+
+create index if not exists idx_gear_owner on public.registered_gear(owner_id);
+create index if not exists idx_gear_code on public.registered_gear(code);
+create index if not exists idx_gear_location on public.registered_gear(lat, lon);
+
+alter table public.registered_gear enable row level security;
+
+drop policy if exists "read registered gear" on public.registered_gear;
+create policy "read registered gear" on public.registered_gear
+  for select using (auth.role() = 'authenticated');
+
+drop policy if exists "register own gear" on public.registered_gear;
+create policy "register own gear" on public.registered_gear
+  for insert with check (auth.uid() = owner_id);
+
+drop policy if exists "update own gear" on public.registered_gear;
+create policy "update own gear" on public.registered_gear
+  for update using (auth.uid() = owner_id or public.is_admin());
+
+drop policy if exists "delete own gear" on public.registered_gear;
+create policy "delete own gear" on public.registered_gear
+  for delete using (auth.uid() = owner_id or public.is_admin());
 -- ================================================================= grants
 --
 -- Row level security decides which ROWS a role may touch. Postgres separately
@@ -342,4 +388,5 @@ alter default privileges in schema public
 -- ============================================================ done
 -- Check it worked: Table Editor should list profiles, sightings, shore_shapes
 -- and devices.
+
 

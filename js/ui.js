@@ -8,8 +8,7 @@ const UIModule = (function() {
   let pendingSighting = null;
   let selectedPhotoFile = null;
   let selectedPhotoUrl = null;
-  let detectionResult = null;
-
+  
   // Toast container
   function ensureToastContainer() {
     let container = document.getElementById('toast-container');
@@ -251,32 +250,7 @@ const UIModule = (function() {
     return selectedPhotoFile;
   }
 
-
-  function hideDetectionResult() {
-    const container = document.getElementById('detection-result');
-    if (container) {
-      container.hidden = true;
-      container.style.display = 'none';
-    }
-    detectionResult = null;
-  }
-
-  function getDetectionResult() {
-    return detectionResult;
-  }
-
-  // Type chips
-  function updateTypeChips(detectedClass, needsConfirmation) {
-    const chips = document.querySelectorAll('.type-chip');
-    chips.forEach(chip => {
-      const isActive = chip.dataset.class === detectedClass && !needsConfirmation;
-      chip.classList.toggle('chip--active', isActive);
-      if (needsConfirmation && chip.dataset.class === detectedClass) {
-        chip.classList.add('chip--active'); // still show detected as active but allow change
-      }
-    });
-  }
-
+  // Type chips. The user picks; nothing preselects for them.
   function setupTypeChips(containerId, onChange) {
     const container = document.getElementById(containerId);
     if (!container) return;
@@ -507,87 +481,46 @@ const UIModule = (function() {
     });
   }
 
-  // --------------------------------------------------------- verdict card
 
-  // Shows what the model said. One clear statement, the confidence, and —
-  // when the model is unsure — an instruction to confirm the type.
-  function showDetectionResult(result) {
-    const container = document.getElementById('detection-result');
-    if (!container) return;
+  // A code has to be readable and copyable, not buried in a sentence.
+  function showCodeModal(title, code, message) {
+    return new Promise((resolve) => {
+      const content = [
+        '<div class="code-card">',
+        message ? '<p class="code-card__note">' + escapeHtml(message) + '</p>' : '',
+        '<span class="code-card__value" id="code-value">' + escapeHtml(code) + '</span>',
+        '<button type="button" class="btn btn--ghost btn--sm" id="btn-copy-code">Copy</button>',
+        '</div>'
+      ].join('');
 
-    const cls = result.primary_class || 'unknown';
-    const confidence = Math.round((result.primary_confidence || 0) * 100);
-    const isNet = cls === 'net';
-    const isNone = cls === 'none';
-    const tone = result.needsConfirmation ? 'warn' : (isNone ? 'muted' : 'good');
+      showModal(title, content, [
+        { label: 'Done', action: 'confirm', class: 'btn--primary', handler: () => resolve(true) }
+      ]);
 
-    const headline = isNone
-      ? 'No fishing gear found'
-      : (isNet ? 'Fishing net detected' : labelFor(cls) + ' detected');
-
-    const sub = [
-      confidence + '% confidence',
-      result.model || null,
-      result.needsConfirmation ? 'needs your confirmation' : null
-    ].filter(Boolean).join(' · ');
-
-    container.className = 'ai-card ai-card--' + tone;
-    container.innerHTML = [
-      '<div class="ai-card__head">',
-      '  <div class="ai-card__verdict">',
-      '    <span class="ai-card__eyebrow">' + (isNone ? 'Model verdict' : 'Confirmed by the model') + '</span>',
-      '    <span class="ai-card__class">' + escapeHtml(headline) + '</span>',
-      '    <span class="ai-card__sub">' + escapeHtml(sub) + '</span>',
-      '  </div>',
-      '  <div class="ai-ring" style="--value:' + confidence + '"><span>' + confidence + '%</span></div>',
-      '</div>',
-      result.explanation ? '<p class="ai-card__note">' + escapeHtml(result.explanation) + '</p>' : '',
-      '<p class="ai-card__note">' + (
-        result.needsConfirmation
-          ? '<strong>Low confidence — choose the gear type yourself before saving.</strong>'
-          : (isNone ? 'If you can see gear anyway, pick its type below.'
-                    : 'Type preselected below — change it if you disagree.')
-      ) + '</p>'
-    ].join('');
-
-    container.hidden = false;
-    renderDetectionsOverlay(result.detections || []);
-
-    detectionResult = result;
-    updateTypeChips(isNone ? null : cls, result.needsConfirmation);
-  }
-
-  function labelFor(cls) {
-    if (typeof Detect !== 'undefined' && Detect.labels && Detect.labels[cls]) {
-      return Detect.labels[cls];
-    }
-    return cls.charAt(0).toUpperCase() + cls.slice(1);
-  }
-
-  // Draw detection boxes on top of the selected photo
-  function renderDetectionsOverlay(detections) {
-    const preview = document.getElementById('photo-preview');
-    if (!preview) return;
-
-    preview.querySelectorAll('.bbox').forEach(el => el.remove());
-    if (!detections.length || !preview.classList.contains('has-image')) return;
-
-    detections.forEach(d => {
-      const box = d.box || [];
-      if (box.length !== 4) return;
-
-      const el = document.createElement('span');
-      el.className = 'bbox';
-      el.dataset.class = d.class || 'unknown';
-      el.style.left = (box[0] * 100) + '%';
-      el.style.top = (box[1] * 100) + '%';
-      el.style.width = (box[2] * 100) + '%';
-      el.style.height = (box[3] * 100) + '%';
-      el.innerHTML = '<i>' + escapeHtml(d.class || '') + ' ' +
-        Math.round((d.confidence || 0) * 100) + '%</i>';
-      preview.appendChild(el);
+      const copy = document.getElementById('btn-copy-code');
+      copy?.addEventListener('click', async () => {
+        try {
+          await navigator.clipboard.writeText(code);
+          copy.textContent = 'Copied';
+        } catch {
+          // Clipboard access is refused outside a secure context. Selecting the
+          // text is the honest fallback.
+          const el = document.getElementById('code-value');
+          if (el) {
+            const range = document.createRange();
+            range.selectNodeContents(el);
+            const sel = window.getSelection();
+            sel.removeAllRanges();
+            sel.addRange(range);
+          }
+          copy.textContent = 'Select and copy';
+        }
+      });
     });
   }
+  // --------------------------------------------------------- verdict card
+
+
   // Initialize UI event listeners
   function init() {
     // Bottom navigation (only when the page has no dedicated router)
@@ -626,10 +559,6 @@ const UIModule = (function() {
     setupPhotoPreview,
     clearPhotoPreview,
     getSelectedPhotoFile,
-    showDetectionResult,
-    renderDetectionsOverlay,
-    hideDetectionResult,
-    getDetectionResult,
     setupTypeChips,
     getSelectedTypeChip,
     updateLocationDisplay,
@@ -638,6 +567,7 @@ const UIModule = (function() {
     showDetailView,
     confirm,
     prompt,
+    showCodeModal,
     init,
     escapeHtml
   };
@@ -649,6 +579,8 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.UIModule = UIModule;
 }
+
+
 
 
 

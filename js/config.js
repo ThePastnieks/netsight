@@ -2,7 +2,7 @@
 
 // Build stamp — bump this on every release. It is used to bust browser caches
 // (asset query strings) and to purge stale service workers.
-const NETSIGHT_BUILD = '2026.11.27.9';
+const NETSIGHT_BUILD = '2026.11.28.4';
 
 const CONFIG = {
   BUILD: NETSIGHT_BUILD,
@@ -31,32 +31,7 @@ const CONFIG = {
   // the same, or existing accounts can no longer sign in.
   AUTH_EMAIL_DOMAIN: 'netsight.lv',
 
-  // ------------------------------------------------------------------ detect
-  // One endpoint, one job: send a photo, say whether there is a fishing net
-  // in the water. The model itself lives behind that endpoint — the app never
-  // talks to a vision provider directly and holds no keys.
-  //
-  // Expected request  (POST application/json)
-  //   { "image": "<base64 jpeg/png, no data: prefix>" }
-  //
-  // Expected response
-  //   {
-  //     "fishing_net": true,
-  //     "confidence": 0.93,
-  //     "class": "net",
-  //     "objects": [{ "class": "net", "confidence": 0.93, "box": [0.1, 0.2, 0.5, 0.3] }],
-  //     "model": "netsight-net-v1"
-  //   }
-  //
-  // Only `fishing_net` and `confidence` are required. See DETECT.md.
-  DETECT: {
-    // Vercel serves api/. Netlify serves netlify/functions/ — if you deploy
-    // there, change this to '/.netlify/functions/detect'.
-    endpoint: '/api/detect',
-    minConfidence: 0.5,     // below this the user must confirm the type
-    timeoutMs: 30000,
-    enabled: true
-  },
+
 
   MATCH_RADIUS_M: 50,
   MAX_PHOTO_MB: 5,
@@ -93,7 +68,6 @@ const CONFIG = {
 
   // Gear classes
   GEAR_CLASSES: ['buoy', 'float', 'net', 'trap', 'unknown'],
-  DETECT_CLASSES: ['buoy', 'float', 'net', 'trap', 'unknown', 'none'],
 
   // Status values
   STATUSES: ['new', 'reported', 'checked', 'resolved', 'false_alarm'],
@@ -133,7 +107,6 @@ const CONFIG = {
     }
   },
 
-  DETECT_STORAGE_KEY: 'netsight_detect_settings',
   THEME_STORAGE_KEY: 'netsight_theme'
 };
 
@@ -143,6 +116,11 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.CONFIG = CONFIG;
 }
+
+
+
+
+
 
 
 

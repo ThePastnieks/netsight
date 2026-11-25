@@ -33,8 +33,12 @@ statement checks before it creates. You do not need `001`; it exists only as
 history, and running it first is what produces
 `relation "public.sightings" does not exist` if you skip it.
 
-When it finishes, **Table Editor** should list four tables: `profiles`,
-`sightings`, `shore_shapes`, `devices`.
+When it finishes, **Table Editor** should list five tables: `profiles`,
+`sightings`, `shore_shapes`, `devices`, `registered_gear`.
+
+> Adding this to a database that already ran an older copy? Run
+> [`005_registered_gear.sql`](../supabase/migrations/005_registered_gear.sql)
+> — it creates just the new table and its policies.
 
 The script ends with `grant` statements. Those are not optional: row level
 security decides which **rows** a role may touch, but Postgres separately decides
@@ -233,6 +237,7 @@ drop function if exists public.my_role() cascade;
 
 Then run `003_full_schema.sql` again. Auth users survive in `auth.users` —
 delete them under **Authentication → Users** if you want a genuinely clean start.
+
 
 
 

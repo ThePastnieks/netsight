@@ -90,18 +90,19 @@ See [docs/SETUP.md](docs/SETUP.md) for the ten-minute setup.
 
 * **Map** — Leaflet + OpenStreetMap, colour-coded pins, six filters, live
   counters, registry overlay with 50 m match zones.
-* **Report flow** — photo → model verdict → gear type → GPS or map-pinned
-  location → note → save, with automatic registry matching.
-* **Pick on map** — a full-height sheet with a draggable pin for placing a
-  sighting by hand.
-* **Detection** — one HTTP contract. The app posts a photo, the model answers
-  `fishing_net: true|false`. Bounding boxes are drawn over the photo when the
-  model supplies them. See [DETECT.md](DETECT.md).
-* **Water Patrol** — a map of every case plus a sortable list; open a case and
-  move it along (`new → reported → checked → resolved | false alarm`). No delete,
-  no model config — that is the admin.
-* **Admin panel** — points (delete one, bulk, export, wipe), model endpoint, and
-  **Users**: who is a User, who is Water Patrol, who is an Administrator.
+* **Report flow** — one action per gear type. A buoy is a point: GPS or a
+  map-pinned location. A net is a line: stretch it from end to end and drag
+  either handle. Nothing can be placed outside the permitted water.
+* **Pick on map** — a full-height sheet with a draggable pin. The permitted water
+  is drawn on it, and the pin turns red where gear may not go.
+* **Live position** — a blue dot that follows the device and changes colour to
+  say whether you are inside the permitted water, with a button to recentre.
+* **Registered nets** — fishermen register a net and get a code to write on the
+  buoy. A report anywhere along that line is matched to its owner.
+* **Water Patrol** — a map of every case plus a sortable list, a code lookup for
+  nets found in the water, and status changes. No delete — that is the admin.
+* **Admin panel** — points (delete one, bulk, export, wipe), the buoy fleet, the
+  registered nets, the drawn shore, and **Users**.
 * **Modern shell** — light/dark/system theme, glass app bar, bottom tab bar,
   bottom sheets, toasts.
 
@@ -195,57 +196,49 @@ It answers with the alerts that report raised. Storage goes to
 database configured it validates and echoes, so a buoy can be tested end to end.
 
 ---
-## Detection — where the model plugs in
+## Reporting
 
-There is no prompt, no API key and no provider list in the app. There is one
-endpoint.
+One action, chosen by what the gear is.
 
-```
-photo ──▶ POST { "image": "<base64>" } ──▶ your model ──▶ { "fishing_net": true, … }
-```
+**A buoy or a float is a point.** Pick the type, then use GPS or pick a spot on
+the map. The pin turns red and the button stops working if the spot is not in
+permitted water.
 
-**Default endpoint:** `/.netlify/functions/detect`
-**Change it:** Admin → AI → Model endpoint.
+**A net or a trap is a line.** Pick the type and the point card disappears —
+there is nothing to place. Instead you stretch the line: tap where it starts,
+tap where it ends, drag either end to adjust. Both ends and everything between
+them must be inside the permitted water, at least 50 m from the bank. A line that
+leaves the water cannot be confirmed; the button reads *Outside the permitted
+water*.
 
-### The reply the app expects
+There is no "report it anyway". The rule is the rule.
 
-```json
-{
-  "fishing_net": true,
-  "confidence": 0.93,
-  "class": "net",
-  "objects": [{ "class": "net", "confidence": 0.93, "box": [0.1, 0.2, 0.5, 0.3] }],
-  "model": "netsight-net-v1"
-}
-```
+Every report takes an optional photo and a description.
 
-Only `fishing_net` and `confidence` are required. `box` is
-`[x, y, width, height]` normalised to 0–1 and draws the rectangle over the photo.
+## Registered nets
 
-The client tolerates naming variations (`detected`, `score`, `detections`,
-`bbox`, `label`, …) and maps loose class names onto `net` / `buoy` / `float` /
-`trap` / `none`. Full rules, error handling and worked examples:
-**[DETECT.md](DETECT.md)**.
+A fisherman registers a net before setting it, from **My nets** in the app:
+stretch it on the map, name it, and get a code like `NS-7K3M9P` to write on the
+buoy.
 
-### What the user sees
+When someone reports a net that matches a registered one — anywhere along the
+line, not just the middle — the app says whose it is. Patrol and admin see the
+owner's name and code instead of "unregistered", which is the difference between
+a legal net and abandoned gear worth a callout.
 
-| Model says | UI |
-|---|---|
-| `fishing_net: true`, confident | **"Fishing net detected"** — type `Net` preselected |
-| `fishing_net: true`, below threshold | Same verdict, but asks the user to confirm the type |
-| `fishing_net: false` | **"No fishing gear found"** — nothing preselected |
-| Endpoint down / bad reply | Toast with the reason — no verdict card |
+Patrol can look a code up directly: read it off the buoy, type it in, and get the
+owner, the line, and whether it is still valid.
 
-### Wiring a model in
+## Photo check
 
-`netlify/functions/telemetry.js  Buoy data in
-netlify/functions/detect.js` ships with a stub. Replace `runModel()` with a call
-to a hosted detector, in-function inference, or your own GPU box. The function's
-return value is the only thing the app cares about. Keep secrets in Netlify
-environment variables, never in `js/`.
+There is no model. Photos are attached as evidence and nothing reads them. The
+old detection endpoint, its admin panel and its client are gone — a stub that
+always answers "no model wired up" is worse than not having the feature, because
+people would act on it.
 
-Test it from **Admin → AI → Test endpoint** — it posts a 1×1 PNG and reports
-either the round-trip time and model name, or exactly what went wrong.
+The seam is gone entirely: no endpoint, no threshold, no stub that answers
+"no model wired up". If a model is built later, it gets its own design —
+the app no longer promises one.
 
 ---
 
@@ -271,42 +264,39 @@ Deletion is immediate and permanent.
 ```
 login.html                 Sign in / create account — the first screen
 index.html                 User app (map, report, settings)
-patrol.html                Water Patrol (map, cases, settings)
-admin.html                 Admin panel (points, devices, shore, users)
+patrol.html                Water Patrol (map, cases, nets, settings)
+admin.html                 Admin panel (points, devices, nets, users, shore)
 vercel.json                Vercel function config
 docs/SETUP.md              Ten-minute database setup — start here
 docs/HARDWARE.md           What the physical buoy must measure
-DETECT.md                  The model contract — read this to build the AI
 manifest.webmanifest       PWA metadata (install prompt, no service worker)
 css/style.css              Design system (tokens → base → components)
 api/
-  detect.js                Vercel: photo → verdict
   telemetry.js             Vercel: buoy → database
 netlify/functions/
-  detect.js                Netlify twin of the above
   telemetry.js             Netlify twin of the above
 js/
-  config.js                Supabase keys, build stamp, endpoint, thresholds
+  config.js                Supabase keys, build stamp, thresholds
   theme.js                 system / light / dark, persisted
   status.js                Statuses, transitions, colours, validation
   location.js              Geolocation watch, manual point, Haversine
   registry.js              registry.csv parsing + matching
+  gear.js                  Registered nets: codes, owner, line matching
   map.js                   Leaflet map, pins, filters, shore overlay, pickers
   ui.js                    Screens, sheets, toasts, verdict card, detail view
-  detection.js             Sends the photo, normalises the model's reply
   store.js                 Sightings CRUD (Supabase, localStorage fallback)
   auth.js                  Accounts: Supabase Auth or local, roles, guards
   shore.js                 Hand-drawn shoreline, 50 m offset, geofence
   devices.js               Buoy fleet: telemetry, alerts
-  patrol.js                Water Patrol: map + case table + status changes
-  admin.js                 Points, devices, shore drawing, accounts
+  patrol.js                Water Patrol: map, cases, net lookup, status changes
+  admin.js                 Points, devices, nets, shore drawing, accounts
   app.js                   Wiring and user flows
 data/registry.csv          Registered gear
 supabase/migrations/       Postgres schema — run 003 to go live
 ```
 
-Load order: `config → theme → status → shore → devices → location → registry →
-map → ui → detection → store → supabase-js → auth → page module`.
+Load order: `config → theme → status → devices → gear → shore → location →
+registry → map → ui → store → supabase-js → auth → page module`.
 
 `shore.js` and `devices.js` come before `map.js` because the map draws from
 them. `auth.js` comes after `supabase-js` because it builds the client.
@@ -331,7 +321,9 @@ Supabase provides Postgres, Auth and Storage. Everything the app needs is in
 |---|---|
 | `001_initial_schema.sql` | `sightings` table, indexes, photo bucket |
 | `002_device_telemetry.sql` | raw telemetry history, one row per report |
-| `003_full_schema.sql` | `profiles`, `shore_shapes`, `devices`, roles, RLS, realtime |
+| `003_full_schema.sql` | everything: profiles, sightings, shore, devices, nets, RLS |
+| `004_grants.sql` | table privileges, if an older copy skipped them |
+| `005_registered_gear.sql` | the nets table alone, for an existing database |
 
 Run `003` on a fresh project and the app is fully wired. Setup steps:
 [docs/SETUP.md](docs/SETUP.md).
@@ -343,11 +335,12 @@ signatures differ:
 
 | Job | Vercel | Netlify |
 |---|---|---|
-| Photo → verdict | `api/detect.js` | `netlify/functions/detect.js` |
 | Buoy → database | `api/telemetry.js` | `netlify/functions/telemetry.js` |
 
-Deploying to Vercel? `CONFIG.DETECT.endpoint` is `/api/detect` (the default).
-Netlify? Change it to `/.netlify/functions/detect`.
+`api/telemetry.js` needs two environment variables on the host, because a buoy
+has no user session and cannot write past row level security: `SUPABASE_URL` and
+`SUPABASE_SERVICE_KEY`. Without them a report is validated and echoed but not
+stored.
 ## Browser support
 
 Chrome/Edge 90+, Firefox 88+, Safari 14+. Requires ES2020, Geolocation,
@@ -356,6 +349,12 @@ FileReader, fetch, `color-mix()` (graceful fallback), CSS Grid.
 ## License
 
 MIT — prototype for demonstration purposes.
+
+
+
+
+
+
 
 
 

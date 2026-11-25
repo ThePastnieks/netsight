@@ -223,20 +223,49 @@ const MapModule = (function() {
 
   // --------------------------------------------------------- user position
 
+  // The blue dot. It moves with the device and changes colour to say whether
+  // this spot is inside the permitted water — the question a boater actually
+  // has while standing on the bank.
+  let userInside = null;
+
+  function userIcon(state) {
+    const tone = state === 'ok' ? '#2FA36B'
+      : state === 'blocked' ? '#E5484D'
+      : '#1FA6D8';
+
+    return L.divIcon({
+      className: 'me-pin me-pin--' + (state || 'idle'),
+      html:
+        '<span class="me-pin__halo" style="--me:' + tone + '"></span>' +
+        '<span class="me-pin__dot" style="--me:' + tone + '"></span>',
+      iconSize: [34, 34],
+      iconAnchor: [17, 17]
+    });
+  }
+
   function showUserPosition(lat, lon, accuracy) {
-    if (!map || !leafletAvailable()) return;
+    if (!map || !leafletAvailable()) return null;
     const latlng = [lat, lon];
 
+    // Ask the shoreline where this is. null means nobody has drawn one yet, in
+    // which case the dot stays neutral rather than claiming anything.
+    const fence = (typeof Shore !== 'undefined')
+      ? Shore.checkGeofence(lat, lon)
+      : { allowed: true, onWater: null };
+
+    const state = fence.onWater === null ? 'idle' : (fence.allowed ? 'ok' : 'blocked');
+    userInside = state;
+
     if (!userMarker) {
-      userMarker = L.circleMarker(latlng, {
-        radius: 7,
-        color: '#1FA6D8',
-        weight: 2,
-        fillColor: '#1FA6D8',
-        fillOpacity: 0.5
+      userMarker = L.marker(latlng, {
+        icon: userIcon(state),
+        interactive: false,
+        keyboard: false,
+        zIndexOffset: 1000
       }).addTo(map);
     } else {
       userMarker.setLatLng(latlng);
+      userMarker.setIcon(userIcon(state));
     }
 
     if (accuracy && accuracy < 500) {
@@ -245,14 +274,39 @@ const MapModule = (function() {
           radius: accuracy,
           color: '#1FA6D8',
           weight: 1,
-          opacity: 0.4,
+          opacity: 0.35,
           fillColor: '#1FA6D8',
-          fillOpacity: 0.08
+          fillOpacity: 0.07
         }).addTo(map);
       } else {
         userMarker._accuracyCircle.setLatLng(latlng).setRadius(accuracy);
       }
     }
+
+    const readout = document.getElementById('me-readout');
+    const bar = document.getElementById('me-bar');
+    if (bar) bar.dataset.state = state;
+    if (readout) {
+      readout.textContent = state === 'ok'
+        ? 'You are in permitted water'
+        : state === 'blocked'
+          ? fence.reason
+          : 'No permitted area drawn yet';
+    }
+
+    return state;
+  }
+
+  function getUserState() {
+    return userInside;
+  }
+
+  // Pan back to the dot. The map never moves on its own — being dragged away
+  // from where you were looking is worse than a stale view.
+  function recentre() {
+    if (!map || !userMarker) return false;
+    map.setView(userMarker.getLatLng(), Math.max(map.getZoom(), 15), { animate: true });
+    return true;
   }
 
 
@@ -499,10 +553,13 @@ const MapModule = (function() {
 
   let spanMap = null;
   let spanLine = null;
-  let spanMarkers = [];
-  let spanPoints = [];
+  let spanHandles = [];       // the two draggable ends
+  let spanPoints = [];        // [{lat, lon}, …] at most two
   let spanCallback = null;
+  let spanZones = [];         // permitted water drawn on the picker
 
+  // The whole point of this screen is drawing one line. So it shows the water,
+  // lets you drag either end, and refuses a line that leaves it.
   function openSpanPicker(onConfirm, initial) {
     const modal = document.getElementById('span-picker-modal');
     if (!modal) {
@@ -512,7 +569,6 @@ const MapModule = (function() {
 
     spanCallback = onConfirm || null;
     spanPoints = [];
-    clearSpan();
 
     const start = initial || LocationModule.getLastPosition() || {
       lat: CONFIG.MAP_CENTER[0],
@@ -523,70 +579,162 @@ const MapModule = (function() {
     void modal.offsetHeight;
     modal.classList.add('sheet--visible');
 
-    // The modal has to be laid out before Leaflet can measure the container,
-    // otherwise the map is created 0x0 and never shows a tile.
+    // Leaflet cannot measure a hidden container, so the map is created after
+    // the sheet is laid out — otherwise it is 0x0 and shows no tiles.
     setTimeout(() => {
       if (!spanMap) {
-        spanMap = L.map('span-picker-map').setView([start.lat, start.lon], 15);
+        spanMap = L.map('span-picker-map', { zoomControl: true })
+          .setView([start.lat, start.lon], 15);
+
         L.tileLayer(CONFIG.TILE_URL, {
           maxZoom: 19,
           attribution: CONFIG.TILE_ATTRIBUTION
         }).addTo(spanMap);
 
-        spanMap.on('click', e => addSpanPoint(e.latlng.lat, e.latlng.lng));
+        spanMap.on('click', e => onSpanTap(e.latlng.lat, e.latlng.lng));
       } else {
         spanMap.setView([start.lat, start.lon], 15);
         spanMap.invalidateSize();
       }
 
+      drawSpanZones();
       clearSpan();
     }, 60);
 
     updateSpanUi();
   }
 
-  function addSpanPoint(lat, lon) {
+  // The permitted water, drawn faintly so it does not compete with the line
+  // being drawn but is unmistakably there.
+  function drawSpanZones() {
     if (!spanMap) return;
 
-    // Two points is a net. A third starts a new one, so a mis-tap is one tap to
-    // fix rather than a modal to reopen.
-    if (spanPoints.length >= 2) clearSpan();
+    spanZones.forEach(l => spanMap.removeLayer(l));
+    spanZones = [];
 
+    if (typeof Shore === 'undefined') return;
+
+    Shore.permittedAreas().forEach(area => {
+      const pts = area.kind === 'circle'
+        ? circleLatLngs(area)
+        : (area.coords || []).map(p => [p[0], p[1]]);
+
+      if (!pts.length) return;
+
+      spanZones.push(L.polygon(pts, {
+        color: PERMIT_FILL,
+        weight: 2,
+        opacity: 0.55,
+        dashArray: '6 6',
+        fillColor: PERMIT_FILL,
+        fillOpacity: 0.12,
+        interactive: false
+      }).addTo(spanMap));
+    });
+  }
+
+  function circleLatLngs(shape) {
+    const R = 6371000;
+    const dLat = (shape.radius / R) * 180 / Math.PI;
+    const dLon = (shape.radius / (R * Math.cos(shape.lat * Math.PI / 180))) * 180 / Math.PI;
+    const pts = [];
+    for (let i = 0; i < 64; i++) {
+      const a = (i / 64) * 2 * Math.PI;
+      pts.push([shape.lat + dLat * Math.cos(a), shape.lon + dLon * Math.sin(a)]);
+    }
+    return pts;
+  }
+
+  // A tap either starts the line, ends it, or — if it is already complete —
+  // starts a fresh one, so a mis-tap costs one tap.
+  function onSpanTap(lat, lon) {
+    if (spanPoints.length >= 2) {
+      clearSpan();
+    }
+
+    addSpanEnd(lat, lon);
+  }
+
+  function addSpanEnd(lat, lon) {
+    const index = spanPoints.length;
     spanPoints.push({ lat, lon });
 
-    const marker = L.circleMarker([lat, lon], {
-      radius: 7,
-      color: '#fff',
-      weight: 2,
-      fillColor: GEAR_LINE,
-      fillOpacity: 1
+    const handle = L.marker([lat, lon], {
+      draggable: true,
+      icon: spanHandleIcon(index === 0 ? 'A' : 'B'),
+      autoPan: true
     }).addTo(spanMap);
 
-    spanMarkers.push(marker);
+    handle.on('drag', () => {
+      const p = handle.getLatLng();
+      spanPoints[index] = { lat: p.lat, lon: p.lng };
+      redrawSpanLine();
+      updateSpanUi();
+    });
+
+    handle.on('dragend', () => {
+      const p = handle.getLatLng();
+      spanPoints[index] = { lat: p.lat, lon: p.lng };
+      updateSpanUi();
+    });
+
+    spanHandles.push(handle);
+
+    redrawSpanLine();
+    updateSpanUi();
 
     if (spanPoints.length === 2) {
       const [a, b] = spanPoints;
-      spanLine = L.polyline([[a.lat, a.lon], [b.lat, b.lon]], {
-        color: GEAR_LINE,
-        weight: 4,
-        opacity: 0.95,
-        lineCap: 'round'
-      }).addTo(spanMap);
+      spanMap.fitBounds([[a.lat, a.lon], [b.lat, b.lon]], { padding: [60, 60] });
+    }
+  }
 
-      const metres = Devices.haversine(a.lat, a.lon, b.lat, b.lon);
-      spanMap.fitBounds([[a.lat, a.lon], [b.lat, b.lon]], { padding: [50, 50] });
-      updateSpanUi(metres);
-      return;
+  function spanHandleIcon(label) {
+    return L.divIcon({
+      className: 'span-handle',
+      html: '<span class="span-handle__grip">' + label + '</span>',
+      iconSize: [30, 30],
+      iconAnchor: [15, 15]
+    });
+  }
+
+  function redrawSpanLine() {
+    if (!spanMap) return;
+
+    if (spanLine) {
+      spanMap.removeLayer(spanLine);
+      spanLine = null;
     }
 
-    updateSpanUi();
+    if (spanPoints.length < 2) return;
+
+    const [a, b] = spanPoints;
+    const check = spanCheck();
+
+    spanLine = L.polyline([[a.lat, a.lon], [b.lat, b.lon]], {
+      color: check.allowed ? GEAR_LINE : LIMIT_LINE,
+      weight: 5,
+      opacity: 0.95,
+      lineCap: 'round'
+    }).addTo(spanMap);
+  }
+
+  function spanCheck() {
+    if (spanPoints.length < 2) {
+      return { allowed: false, reason: 'Not drawn yet' };
+    }
+    const [a, b] = spanPoints;
+    if (typeof Shore === 'undefined') {
+      return { allowed: true, reason: 'No shoreline drawn yet' };
+    }
+    return Shore.checkSpan([a.lat, a.lon], [b.lat, b.lon]);
   }
 
   function clearSpan() {
     if (!spanMap) return;
 
-    spanMarkers.forEach(m => spanMap.removeLayer(m));
-    spanMarkers = [];
+    spanHandles.forEach(m => spanMap.removeLayer(m));
+    spanHandles = [];
 
     if (spanLine) {
       spanMap.removeLayer(spanLine);
@@ -597,33 +745,47 @@ const MapModule = (function() {
     updateSpanUi();
   }
 
-  function updateSpanUi(metres) {
+  function updateSpanUi() {
     const hint = document.getElementById('span-hint');
     const btn = document.getElementById('btn-span-confirm');
     const undo = document.getElementById('btn-span-undo');
 
+    const check = spanCheck();
+
     if (hint) {
       if (spanPoints.length === 0) {
-        hint.textContent = 'Tap the map where the net starts';
+        hint.textContent = 'Tap where the net starts — then drag either end to adjust';
         hint.dataset.state = 'idle';
       } else if (spanPoints.length === 1) {
         hint.textContent = 'Now tap where it ends';
         hint.dataset.state = 'idle';
       } else {
-        const m = metres !== undefined ? metres
-          : Devices.haversine(spanPoints[0].lat, spanPoints[0].lon,
-                              spanPoints[1].lat, spanPoints[1].lon);
-        hint.textContent = Math.round(m) + ' m between the two anchors';
-        hint.dataset.state = 'ok';
+        const metres = Shore.spanLength(
+          [spanPoints[0].lat, spanPoints[0].lon],
+          [spanPoints[1].lat, spanPoints[1].lon]
+        );
+        hint.textContent = Math.round(metres) + ' m · ' + check.reason;
+        hint.dataset.state = check.allowed ? 'ok' : 'blocked';
       }
     }
 
-    if (btn) btn.disabled = spanPoints.length < 2;
+    // A line that leaves the water cannot be confirmed. This is the whole
+    // rule, enforced where it is easiest to see.
+    if (btn) {
+      btn.disabled = spanPoints.length < 2 || !check.allowed;
+      btn.textContent = (spanPoints.length === 2 && !check.allowed)
+        ? 'Outside the permitted water'
+        : 'Use this line';
+    }
+
     if (undo) undo.disabled = spanPoints.length === 0;
   }
 
   function confirmSpan() {
     if (spanPoints.length < 2) return;
+
+    const check = spanCheck();
+    if (!check.allowed) return;
 
     const cb = spanCallback;
     const points = spanPoints.map(p => [p.lat, p.lon]);
@@ -631,7 +793,19 @@ const MapModule = (function() {
     spanCallback = null;
     closeSpanPicker();
 
-    if (cb) cb(points);
+    if (cb) cb(points, check);
+  }
+
+  // Drops the start at the device's own position — the common case is standing
+  // at one end of your own net.
+  function spanStartHere() {
+    const pos = LocationModule.getLastPosition();
+    if (!pos || !spanMap) return false;
+
+    clearSpan();
+    addSpanEnd(pos.lat, pos.lon);
+    spanMap.setView([pos.lat, pos.lon], 16);
+    return true;
   }
 
   function closeSpanPicker() {
@@ -641,6 +815,8 @@ const MapModule = (function() {
     modal.hidden = true;
   }
   // ---------------------------------------------------------- location picker
+
+  let pickerZones = [];
 
   function openPicker(onConfirm, initial) {
     const modal = document.getElementById('map-picker-modal');
@@ -674,22 +850,104 @@ const MapModule = (function() {
       pickerMap.setView([start.lat, start.lon], 14);
     }
 
+    drawPickerZones();
     setPickerPoint(start.lat, start.lon);
     setTimeout(() => pickerMap.invalidateSize(), 150);
+  }
+
+  // Same water the span picker shows. Picking a point without seeing the
+  // permitted area is what made "why is this refused" a mystery.
+  function drawPickerZones() {
+    if (!pickerMap) return;
+
+    pickerZones.forEach(l => pickerMap.removeLayer(l));
+    pickerZones = [];
+
+    if (typeof Shore === 'undefined') return;
+
+    Shore.permittedAreas().forEach(area => {
+      const pts = area.kind === 'circle'
+        ? circleLatLngs(area)
+        : (area.coords || []).map(p => [p[0], p[1]]);
+
+      if (!pts.length) return;
+
+      pickerZones.push(L.polygon(pts, {
+        color: PERMIT_FILL,
+        weight: 2,
+        opacity: 0.55,
+        dashArray: '6 6',
+        fillColor: PERMIT_FILL,
+        fillOpacity: 0.12,
+        interactive: false
+      }).addTo(pickerMap));
+    });
+  }
+
+  function pickerCheck(lat, lon) {
+    if (typeof Shore === 'undefined') {
+      return { allowed: true, onWater: null, reason: 'No shoreline drawn yet' };
+    }
+    return Shore.checkGeofence(lat, lon);
   }
 
   function setPickerPoint(lat, lon) {
     pickerLatLng = { lat, lon };
     if (!pickerMap) return;
 
+    const check = pickerCheck(lat, lon);
+
     if (!pickerMarker) {
-      pickerMarker = L.marker([lat, lon], { draggable: true, icon: pinIcon('blue') }).addTo(pickerMap);
-      pickerMarker.on('dragend', () => {
+      pickerMarker = L.marker([lat, lon], {
+        draggable: true,
+        icon: pinIcon(check.allowed ? 'blue' : 'red')
+      }).addTo(pickerMap);
+
+      pickerMarker.on('drag', () => {
         const p = pickerMarker.getLatLng();
         pickerLatLng = { lat: p.lat, lon: p.lng };
+        refreshPickerState();
+      });
+
+      pickerMarker.on('dragend', () => {
+        const p = pickerMarker.getLatLng();
+        setPickerPoint(p.lat, p.lng);
       });
     } else {
       pickerMarker.setLatLng([lat, lon]);
+      pickerMarker.setIcon(pinIcon(check.allowed ? 'blue' : 'red'));
+    }
+
+    refreshPickerState();
+  }
+
+  // Keeps the pin, the message and the confirm button in step while dragging.
+  function refreshPickerState() {
+    if (!pickerLatLng) return;
+
+    const check = pickerCheck(pickerLatLng.lat, pickerLatLng.lon);
+    const note = document.getElementById('picker-fence');
+    const btn = document.getElementById('btn-map-picker-confirm');
+
+    if (note) {
+      note.hidden = false;
+      note.dataset.state = check.onWater === null
+        ? 'idle'
+        : (check.allowed ? 'ok' : 'blocked');
+      note.textContent = check.onWater === null
+        ? 'No permitted area drawn yet — an administrator draws it in Admin → Shore'
+        : check.reason;
+    }
+
+    // A point outside the water cannot be used. Not a warning to click past:
+    // the rule is that gear only goes in permitted water.
+    if (btn) {
+      btn.disabled = !check.allowed;
+      btn.textContent = check.allowed ? 'Use this point' : 'Not permitted here';
+    }
+
+    if (pickerMarker) {
+      pickerMarker.setIcon(pinIcon(check.allowed ? 'blue' : 'red'));
     }
   }
 
@@ -716,6 +974,9 @@ const MapModule = (function() {
     refresh,
     focusOn,
     showUserPosition,
+    getUserState,
+    recentre,
+    spanStartHere,
     toggleRegistryLayer,
     renderDevices,
     toggleDeviceLayer,
@@ -736,6 +997,10 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.MapModule = MapModule;
 }
+
+
+
+
 
 
 

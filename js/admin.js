@@ -15,24 +15,22 @@ const Admin = (function() {
   async function boot(session) {
     Theme.init();
     Auth.mount(session);
-    Detect.load();
 
     await Shore.load();
     await Devices.load();
+    await GearModule.load();
 
     bindTabs();
     bindPoints();
-    bindProviders();
     bindDevices();
     bindShore();
     bindUsers();
     bindSecurity();
 
     await loadPoints();
-    renderProviders();
     renderDevices();
     renderShoreList();
-    syncDetection();
+    renderGearList();
 
   }
 
@@ -141,7 +139,6 @@ const Admin = (function() {
 
   function pointCard(s) {
     const statusLabel = StatusModule.getStatusLabel(s.status);
-    const confidence = Math.round((s.confidence || 0) * 100);
     const photo = s.photo_url && String(s.photo_url).startsWith('data:')
       ? `<img src="${s.photo_url}" alt="">`
       : `<span class="point__noimg">${UIModule.escapeHtml((s.user_class || '?').slice(0, 3))}</span>`;
@@ -151,9 +148,19 @@ const Admin = (function() {
       : 'no coords';
 
     const when = timeAgo(s.created_at);
-    const registry = s.registry_match
-      ? `<span class="registry-yes">${UIModule.escapeHtml(s.registry_id || 'registered')}</span>`
-      : '<span class="registry-no">unverified</span>';
+
+    // Who it belongs to is the first thing an administrator needs to know.
+    const registered = s.registry_match ? GearModule.findByCode(s.registry_id) : null;
+    const registry = registered
+      ? `<span class="owner owner--known">${UIModule.escapeHtml(registered.ownerName)}` +
+        `<span class="owner__code">${UIModule.escapeHtml(registered.code)}</span></span>`
+      : s.registry_match
+        ? `<span class="registry-yes">${UIModule.escapeHtml(s.registry_id || 'registered')}</span>`
+        : '<span class="owner owner--unknown">Unregistered</span>';
+
+    const spanMetres = Array.isArray(s.span) && s.span.length === 2
+      ? Math.round(Shore.spanLength(s.span[0], s.span[1]))
+      : null;
 
     return `
       <article class="point" data-id="${UIModule.escapeHtml(s.id)}">
@@ -168,7 +175,7 @@ const Admin = (function() {
           <div class="point__row">
             <span class="status-badge status-badge--${s.status}">${UIModule.escapeHtml(statusLabel)}</span>
             <span class="point__type">${UIModule.escapeHtml(s.user_class || 'unknown')}</span>
-            <span class="point__conf">${confidence}%</span>
+              ${spanMetres ? `<span class="point__conf">${spanMetres} m</span>` : ``}
             ${registry}
           </div>
           <div class="point__meta">
@@ -324,108 +331,88 @@ const Admin = (function() {
     document.getElementById('btn-export')?.addEventListener('click', exportJson);
   }
 
-  // ------------------------------------------------------------- detection
 
-  function renderProviders() {
-    const cfg = Detect.get();
+  // ------------------------------------------------------------------ nets
 
-    const endpoint = document.getElementById('detect-endpoint');
-    if (endpoint && document.activeElement !== endpoint) {
-      endpoint.value = cfg.endpoint || '';
+  async function renderGearList() {
+    const host = document.getElementById('admin-gear-list');
+    const empty = document.getElementById('admin-gear-empty');
+    if (!host) return;
+
+    await GearModule.load();
+
+    const all = GearModule.all();
+    const set = (id, n) => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = String(n);
+    };
+
+    set('g-total', all.length);
+    set('g-valid', all.filter(g => !GearModule.isExpired(g)).length);
+    set('g-expired', all.filter(g => GearModule.isExpired(g)).length);
+    set('g-owners', new Set(all.map(g => g.ownerId)).size);
+    set('g-count', all.length);
+
+    if (!all.length) {
+      host.innerHTML = '';
+      if (empty) empty.hidden = false;
+      return;
     }
 
-    const threshold = document.getElementById('ai-threshold');
-    const thrVal = document.getElementById('thr-val');
-    if (threshold && document.activeElement !== threshold) {
-      threshold.value = Math.round(cfg.minConfidence * 100);
-      if (thrVal) thrVal.textContent = Math.round(cfg.minConfidence * 100) + '%';
-      paintRange(threshold);
-    }
+    if (empty) empty.hidden = true;
 
-    syncDetection();
-  }
+    host.innerHTML = all.map(gear => {
+      const expired = GearModule.isExpired(gear);
+      const metres = Array.isArray(gear.span)
+        ? Math.round(Shore.spanLength(gear.span[0], gear.span[1]))
+        : null;
 
-  function syncDetection() {
-    const cfg = Detect.get();
-    const ready = !!cfg.endpoint;
-    const badge = document.getElementById('ai-ready');
+      return [
+        '<article class="gear-item' + (expired ? ' gear-item--expired' : '') + '">',
+        '  <div class="gear-item__code">',
+        '    <span class="gear-item__code-label">Code</span>',
+        '    <span class="gear-item__code-value">' + UIModule.escapeHtml(gear.code) + '</span>',
+        '  </div>',
+        '  <div class="gear-item__body">',
+        '    <span class="gear-item__label">' + UIModule.escapeHtml(gear.ownerName) + '</span>',
+        '    <span class="gear-item__meta">',
+        UIModule.escapeHtml(gear.label),
+        metres ? ' · ' + metres + ' m' : '',
+        expired ? ' · expired' : ' · valid',
+        '    </span>',
+        '  </div>',
+        '  <button type="button" class="icon-btn icon-btn--sm" data-remove-gear="' +
+          UIModule.escapeHtml(gear.id) + '" aria-label="Remove ' + UIModule.escapeHtml(gear.code) + '">',
+        '    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">',
+        '      <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>',
+        '    </svg>',
+        '  </button>',
+        '</article>'
+      ].join('');
+    }).join('');
 
-    if (badge) {
-      badge.textContent = ready ? 'connected' : 'not set';
-      badge.dataset.state = ready ? 'ready' : 'off';
-    }
-
-    const hint = document.getElementById('ai-hint');
-    if (hint) {
-      hint.textContent = ready
-        ? 'Photos are sent to ' + cfg.endpoint + '. The app shows whatever the model answers.'
-        : 'No endpoint set. Uploads will report that detection is unavailable.';
-      hint.dataset.tone = ready ? 'ok' : 'error';
-    }
-  }
-
-  function bindProviders() {
-    const endpoint = document.getElementById('detect-endpoint');
-    endpoint?.addEventListener('change', () => {
-      Detect.save({ endpoint: endpoint.value.trim() });
-      renderProviders();
-      UIModule.showToast('Endpoint saved', 'success');
-    });
-
-    const threshold = document.getElementById('ai-threshold');
-    threshold?.addEventListener('input', () => {
-      const thrVal = document.getElementById('thr-val');
-      if (thrVal) thrVal.textContent = threshold.value + '%';
-      paintRange(threshold);
-    });
-    threshold?.addEventListener('change', () => {
-      Detect.save({ minConfidence: Number(threshold.value) / 100 });
-      const thrVal = document.getElementById('thr-val');
-      if (thrVal) thrVal.textContent = threshold.value + '%';
-      syncDetection();
-    });
-
-    document.getElementById('btn-detect-test')?.addEventListener('click', async () => {
-      const note = document.getElementById('ai-hint');
-      const btn = document.getElementById('btn-detect-test');
-
-      if (note) {
-        note.textContent = 'Contacting the model…';
-        note.dataset.tone = 'info';
-      }
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = 'Testing…';
-      }
-
-      const res = await Detect.testEndpoint(endpoint ? endpoint.value.trim() : undefined);
-
-      if (note) {
-        note.textContent = res.message;
-        note.dataset.tone = res.ok ? 'ok' : 'error';
-      }
-      if (btn) {
-        btn.disabled = false;
-        btn.textContent = 'Test endpoint';
-      }
-
-      UIModule.showToast(
-        res.ok ? 'Model reachable' : 'Test failed: ' + res.message,
-        res.ok ? 'success' : 'error'
-      );
-    });
-
-    document.getElementById('btn-detect-reset')?.addEventListener('click', () => {
-      Detect.reset();
-      renderProviders();
-      UIModule.showToast('Detection settings reset', 'info');
+    host.querySelectorAll('[data-remove-gear]').forEach(btn => {
+      btn.addEventListener('click', () => removeGear(btn.dataset.removeGear));
     });
   }
 
-  function paintRange(el) {
-    const pct = ((Number(el.value) - Number(el.min)) /
-      (Number(el.max) - Number(el.min))) * 100;
-    el.style.setProperty('--fill', pct + '%');
+  async function removeGear(id) {
+    const gear = GearModule.get(id);
+    if (!gear) return;
+
+    const ok = await UIModule.confirm(
+      'Remove ' + gear.code + ' (' + gear.ownerName + ')? Their reports near it will ' +
+      'no longer be matched to them.',
+      { title: 'Remove registered net', confirmLabel: 'Remove', danger: true }
+    );
+    if (!ok) return;
+
+    if (await GearModule.remove(id)) {
+      await renderGearList();
+      UIModule.showToast('Net removed', 'success');
+    } else {
+      UIModule.showToast('Could not remove it', 'error');
+    }
   }
   // --------------------------------------------------------------- shore
   //
@@ -1232,6 +1219,10 @@ const Admin = (function() {
 
 document.addEventListener('DOMContentLoaded', () => Admin.init());
 window.Admin = Admin;
+
+
+
+
 
 
 

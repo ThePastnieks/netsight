@@ -11,7 +11,7 @@
 
   <script>
   (function () {
-    var BUILD = '2026.11.27.9';
+    var BUILD = '2026.11.28.4';
     var KEY = 'netsight_build';
     var seen = null;
     try { seen = localStorage.getItem(KEY); } catch (e) {}
@@ -44,12 +44,12 @@
 
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/netsight-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css?v=2026.11.27.9">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.28.4">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
 
-  <script src="js/config.js?v=2026.11.27.9"></script>
-  <script src="js/theme.js?v=2026.11.27.9"></script>
+  <script src="js/config.js?v=2026.11.28.4"></script>
+  <script src="js/theme.js?v=2026.11.28.4"></script>
 </head>
 <body data-page="admin">
 
@@ -96,8 +96,8 @@
 
     <div class="admin-tabs segmented segmented--full" role="tablist">
       <button type="button" class="segment is-active" data-tab="points" role="tab">Points</button>
-      <button type="button" class="segment" data-tab="ai" role="tab">AI</button>
       <button type="button" class="segment" data-tab="devices" role="tab">Devices</button>
+      <button type="button" class="segment" data-tab="nets" role="tab">Nets</button>
       <button type="button" class="segment" data-tab="users" role="tab">Users</button>
       <button type="button" class="segment" data-tab="shore" role="tab">Shore</button>
       <button type="button" class="segment" data-tab="security" role="tab">Security</button>
@@ -175,82 +175,6 @@
           </div>
         </div>
       </section>
-
-      <!-- ---------------- AI ---------------- -->
-      <section class="admin-pane" data-pane="ai">
-
-        <div class="card">
-          <header class="card__head">
-            <h2 class="card__title">Model endpoint</h2>
-            <span class="tag" id="ai-ready">not set</span>
-          </header>
-          <div class="card__body stack-sm">
-            <label class="field">
-              <span class="field__label">Where the app sends photos</span>
-              <input class="input" id="detect-endpoint" type="text"
-                     placeholder="/.netlify/functions/detect"
-                     spellcheck="false" autocomplete="off">
-            </label>
-
-            <div class="row row--2">
-              <button type="button" class="btn btn--soft" id="btn-detect-test">Test endpoint</button>
-              <button type="button" class="btn btn--ghost" id="btn-detect-reset">Reset</button>
-            </div>
-
-            <p class="note" id="ai-hint" data-tone="muted"></p>
-          </div>
-        </div>
-
-        <div class="card">
-          <header class="card__head">
-            <h2 class="card__title">Confidence</h2>
-          </header>
-          <div class="card__body">
-            <label class="field">
-              <span class="field__label">Threshold · <b id="thr-val">50%</b></span>
-              <input id="ai-threshold" class="range" type="range" min="20" max="95" step="5" value="50">
-            </label>
-            <p class="hint">
-              Below this the verdict is shown but the user must confirm the gear
-              type before saving. Above it the type is preselected.
-            </p>
-          </div>
-        </div>
-
-        <div class="card">
-          <header class="card__head">
-            <h2 class="card__title">What the app expects back</h2>
-          </header>
-          <div class="card__body stack-sm">
-            <p class="hint">
-              POST <code class="monospace">{ "image": "&lt;base64&gt;" }</code> and answer with:
-            </p>
-            <pre class="code-block">{
-  "fishing_net": true,
-  "confidence": 0.93,
-  "class": "net",
-  "objects": [
-    { "class": "net", "confidence": 0.93,
-      "box": [0.1, 0.2, 0.5, 0.3] }
-  ],
-  "model": "netsight-net-v1"
-}</pre>
-            <p class="hint">
-              Only <code class="monospace">fishing_net</code> and
-              <code class="monospace">confidence</code> are required.
-              <code class="monospace">box</code> is
-              [x, y, width, height] in 0–1 image coordinates — that draws the
-              rectangle over the photo.
-            </p>
-            <p class="hint">
-              Full contract: <a class="link" href="DETECT.md">DETECT.md</a> ·
-              stub: <code class="monospace">netlify/functions/detect.js</code>
-            </p>
-          </div>
-        </div>
-
-      </section>
-      <!-- ---------------- SECURITY ---------------- -->
       <!-- ---------------- DEVICES ---------------- -->
       <section class="admin-pane" data-pane="devices">
 
@@ -365,6 +289,38 @@
           <p>No shoreline drawn</p>
         </div>
       </section>
+      <!-- ---------------- NETS ---------------- -->
+      <section class="admin-pane" data-pane="nets">
+
+        <div class="stats">
+          <div class="stat"><span class="stat__value" id="g-total">0</span><span class="stat__label">Registered</span></div>
+          <div class="stat stat--ok"><span class="stat__value" id="g-valid">0</span><span class="stat__label">Valid</span></div>
+          <div class="stat stat--warn"><span class="stat__value" id="g-expired">0</span><span class="stat__label">Expired</span></div>
+          <div class="stat stat--danger"><span class="stat__value" id="g-owners">0</span><span class="stat__label">Owners</span></div>
+        </div>
+
+        <div class="card">
+          <header class="card__head">
+            <h2 class="card__title">Nets fishermen registered</h2>
+            <span class="tag" id="g-count">0</span>
+          </header>
+          <div class="card__body stack-sm">
+            <p class="hint">
+              Every net an owner registered, with the code written on its buoy.
+              A report near one of these is legal gear, not abandoned gear —
+              which is the difference between a callout and nothing.
+            </p>
+          </div>
+        </div>
+
+        <div id="admin-gear-list" class="gear-list"></div>
+
+        <div id="admin-gear-empty" class="empty-state" hidden>
+          <p>No nets registered</p>
+          <p class="empty-state__hint">Owners register them from My nets in the app.</p>
+        </div>
+
+      </section>
       <!-- ---------------- USERS ---------------- -->
       <section class="admin-pane" data-pane="users">
 
@@ -437,20 +393,29 @@
     </div>
   </div>
 
-  <script src="js/status.js?v=2026.11.27.9"></script>
+  <script src="js/status.js?v=2026.11.28.4"></script>
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/devices.js?v=2026.11.27.9"></script>
-  <script src="js/shore.js?v=2026.11.27.9"></script>
-  <script src="js/store.js?v=2026.11.27.9"></script>
-  <script src="js/ui.js?v=2026.11.27.9"></script>
-  <script src="js/detection.js?v=2026.11.27.9"></script>
+  <script src="js/devices.js?v=2026.11.28.4"></script>
+  <script src="js/gear.js?v=2026.11.28.4"></script>
+  <script src="js/shore.js?v=2026.11.28.4"></script>
+  <script src="js/store.js?v=2026.11.28.4"></script>
+  <script src="js/ui.js?v=2026.11.28.4"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
-  <script src="js/auth.js?v=2026.11.27.9"></script>
-  <script src="js/admin.js?v=2026.11.27.9"></script>
+  <script src="js/auth.js?v=2026.11.28.4"></script>
+  <script src="js/admin.js?v=2026.11.28.4"></script>
 </body>
 </html>
+
+
+
+
+
+
+
+
+
 
 
 

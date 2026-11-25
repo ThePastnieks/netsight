@@ -1,4 +1,4 @@
-// NetSight Auth — accounts in Supabase, or in this browser if Supabase is absent
+﻿// NetSight Auth — accounts in Supabase, or in this browser if Supabase is absent
 //
 // Two modes, one API:
 //
@@ -497,6 +497,10 @@ const Auth = (function() {
 
   function localSession(user) {
     const s = {
+      // Local accounts have no database id, but the rest of the app expects
+      // one — gear ownership, for instance. The username is stable and unique,
+      // so it serves; cloud mode overrides this with the real uuid.
+      id: user.id || ('local:' + user.username),
       username: user.username,
       displayName: user.displayName || user.username,
       role: user.role,
@@ -515,6 +519,9 @@ const Auth = (function() {
     try { s = JSON.parse(raw); } catch { return null; }
 
     if (!s || !s.username || !ROLES[s.role]) return null;
+
+      // Sessions saved before ids existed still need one.
+      if (!s.id) s.id = 'local:' + s.username;
 
     const age = Date.now() - Number(s.at || 0);
     if (!Number.isFinite(age) || age > CFG.ttlHours * 3600 * 1000) {
@@ -817,6 +824,8 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.Auth = Auth;
 }
+
+
 
 
 

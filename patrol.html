@@ -11,7 +11,7 @@
 
   <script>
   (function () {
-    var BUILD = '2026.11.27.9';
+    var BUILD = '2026.11.28.4';
     var KEY = 'netsight_build';
     var seen = null;
     try { seen = localStorage.getItem(KEY); } catch (e) {}
@@ -45,10 +45,10 @@
   <link rel="icon" href="assets/netsight-logo.svg" type="image/svg+xml">
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="css/style.css?v=2026.11.27.9">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.28.4">
 
-  <script src="js/config.js?v=2026.11.27.9"></script>
-  <script src="js/theme.js?v=2026.11.27.9"></script>
+  <script src="js/config.js?v=2026.11.28.4"></script>
+  <script src="js/theme.js?v=2026.11.28.4"></script>
 </head>
 <body data-page="patrol">
 
@@ -93,9 +93,11 @@
     </header>
 
     <!-- tabs -->
+    <!-- tabs -->
     <div class="admin-tabs segmented segmented--full" role="tablist">
       <button type="button" class="segment is-active" data-tab="map" role="tab">Map</button>
       <button type="button" class="segment" data-tab="cases" role="tab">Cases</button>
+      <button type="button" class="segment" data-tab="gear" role="tab">Nets</button>
       <button type="button" class="segment" data-tab="settings" role="tab">Settings</button>
     </div>
 
@@ -119,7 +121,20 @@
           <div class="stat"><span class="stat__value" id="p-total">0</span><span class="stat__label">Total</span></div>
           <div class="stat stat--danger"><span class="stat__value" id="p-reported">0</span><span class="stat__label">Reported</span></div>
           <div class="stat stat--warn"><span class="stat__value" id="p-new">0</span><span class="stat__label">New</span></div>
-          <div class="stat stat--ok"><span class="stat__value" id="p-resolved">0</span><span class="stat__label">Resolved</span></div>
+          <div class="stat stat--ok"><span class="stat__value" id="p-registered">0</span><span class="stat__label">Registered</span></div>
+        </div>
+
+        <div class="card">
+          <header class="card__head">
+            <h2 class="card__title">What the map is showing</h2>
+          </header>
+          <div class="card__body stack-sm">
+            <p class="hint">
+              Pins are reports. Green lines are nets someone registered, so a net
+              that looks abandoned may simply be someone's legal gear. Dashed
+              green is permitted water; the red line is the 50 m limit.
+            </p>
+          </div>
         </div>
       </section>
 
@@ -147,12 +162,11 @@
           <table class="cases-table">
             <thead>
               <tr>
-                <th scope="col">ID</th>
                 <th scope="col">Type</th>
                 <th scope="col">Status</th>
-                <th scope="col">Registry</th>
-                <th scope="col">Conf.</th>
-                <th scope="col">Time</th>
+                <th scope="col">Belongs to</th>
+                <th scope="col">Length</th>
+                <th scope="col">When</th>
                 <th scope="col">Actions</th>
               </tr>
             </thead>
@@ -161,6 +175,43 @@
 
           <div id="patrol-empty" class="empty-state" hidden>
             <p>No cases match this filter</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- ===== NETS ===== -->
+      <section class="patrol-pane" data-pane="gear">
+        <div class="card">
+          <header class="card__head">
+            <h2 class="card__title">Check a net</h2>
+          </header>
+          <div class="card__body stack-sm">
+            <p class="hint">
+              Read the code off the buoy. If it is registered you get the owner,
+              the line it was set on, and whether it is still valid.
+            </p>
+
+            <div class="row row--2">
+              <input class="input" id="gear-lookup" type="text" placeholder="NS-XXXXXX"
+                     spellcheck="false" autocomplete="off" autocapitalize="characters">
+              <button type="button" class="btn btn--soft" id="btn-gear-lookup">Look up</button>
+            </div>
+
+            <div id="gear-result" class="gear-result" hidden></div>
+          </div>
+        </div>
+
+        <div class="card">
+          <header class="card__head">
+            <h2 class="card__title">Registered in this water</h2>
+            <span class="tag" id="gear-total">0</span>
+          </header>
+          <div class="card__body stack-sm">
+            <div id="gear-table" class="gear-list"></div>
+            <div id="gear-none" class="empty-state" hidden>
+              <p>No nets registered yet</p>
+              <p class="hint">Owners register their own from My nets on the map page.</p>
+            </div>
           </div>
         </div>
       </section>
@@ -193,8 +244,8 @@
               <li>Open a case and read the photo, coordinates and note</li>
               <li>Move a case along: new → reported → checked → resolved</li>
               <li>Mark a report as a false alarm</li>
+              <li>Register a net you own, with its ID</li>
               <li class="is-off">Delete points (administrator only)</li>
-              <li class="is-off">Change the detection model (administrator only)</li>
             </ul>
           </div>
         </div>
@@ -205,20 +256,28 @@
 
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/status.js?v=2026.11.27.9"></script>
-  <script src="js/devices.js?v=2026.11.27.9"></script>
-  <script src="js/shore.js?v=2026.11.27.9"></script>
-  <script src="js/location.js?v=2026.11.27.9"></script>
-  <script src="js/registry.js?v=2026.11.27.9"></script>
-  <script src="js/map.js?v=2026.11.27.9"></script>
-  <script src="js/ui.js?v=2026.11.27.9"></script>
-  <script src="js/store.js?v=2026.11.27.9"></script>
+  <script src="js/status.js?v=2026.11.28.4"></script>
+  <script src="js/devices.js?v=2026.11.28.4"></script>
+  <script src="js/gear.js?v=2026.11.28.4"></script>
+  <script src="js/shore.js?v=2026.11.28.4"></script>
+  <script src="js/location.js?v=2026.11.28.4"></script>
+  <script src="js/registry.js?v=2026.11.28.4"></script>
+  <script src="js/map.js?v=2026.11.28.4"></script>
+  <script src="js/ui.js?v=2026.11.28.4"></script>
+  <script src="js/store.js?v=2026.11.28.4"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
-  <script src="js/auth.js?v=2026.11.27.9"></script>
-  <script src="js/patrol.js?v=2026.11.27.9"></script>
+  <script src="js/auth.js?v=2026.11.28.4"></script>
+  <script src="js/patrol.js?v=2026.11.28.4"></script>
 </body>
 </html>
+
+
+
+
+
+
+
 
 
 

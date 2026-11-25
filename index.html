@@ -14,7 +14,7 @@
        Runs before anything else so the app never boots on mixed assets. -->
   <script>
   (function () {
-    var BUILD = '2026.11.27.9';
+    var BUILD = '2026.11.28.4';
     var KEY = 'netsight_build';
     var seen = null;
     try { seen = localStorage.getItem(KEY); } catch (e) {}
@@ -52,10 +52,10 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="preconnect" href="https://tile.openstreetmap.org">
-  <link rel="stylesheet" href="css/style.css?v=2026.11.27.9">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.28.4">
 
-  <script src="js/config.js?v=2026.11.27.9"></script>
-  <script src="js/theme.js?v=2026.11.27.9"></script>
+  <script src="js/config.js?v=2026.11.28.4"></script>
+  <script src="js/theme.js?v=2026.11.28.4"></script>
 </head>
 <body>
 
@@ -85,10 +85,6 @@
           <span class="role-chip__dot"></span>
           <span data-user-name>—</span>
         </span>
-        <button type="button" class="pill pill--ai" id="ai-pill" data-mode="off"
-                title="AI status" aria-label="AI status">
-          <span class="pill__dot"></span><span class="pill__text">AI off</span>
-        </button>
         <button type="button" class="icon-btn" data-theme-toggle aria-label="Theme">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <circle cx="12" cy="12" r="4"></circle>
@@ -145,6 +141,21 @@
       </svg>
       <span class="fab__label">Report</span>
     </button>
+
+    <!-- The blue dot, with a way back to it. The map never moves on its own:
+         being dragged away from what you were looking at is worse than a stale
+         view, so recentring is a deliberate press. -->
+    <div class="me-bar" id="me-bar" data-state="idle">
+      <span class="me-bar__dot" aria-hidden="true"></span>
+      <span class="me-bar__text" id="me-readout">Finding you…</span>
+      <button type="button" class="me-bar__btn" id="btn-recentre" aria-label="Centre on me">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" aria-hidden="true">
+          <circle cx="12" cy="12" r="3"></circle>
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path>
+        </svg>
+      </button>
+    </div>
   </div>
 
   <!-- ============ REPORT SCREEN ============ -->
@@ -156,88 +167,57 @@
           <polyline points="15 18 9 12 15 6"></polyline>
         </svg>
       </button>
-      <h1 class="app-bar__title">New sighting</h1>
+      <h1 class="app-bar__title">Report gear</h1>
       <span class="app-bar__spacer"></span>
     </header>
 
     <div class="screen__body">
       <form id="sighting-form" class="stack" novalidate>
 
-        <!-- photo + AI -->
-        <section class="card card--flush">
+        <!-- what is it -->
+        <section class="card">
           <header class="card__head">
-            <h2 class="card__title">Photo &amp; AI check</h2>
-            <span class="tag" id="photo-badge" hidden>Ready</span>
+            <h2 class="card__title">What did you find?</h2>
           </header>
-
           <div class="card__body">
-            <div class="photo" id="photo-preview" tabindex="0" role="button" aria-label="Add a photo">
-              <div class="photo__empty">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
-                  <rect x="3" y="3" width="18" height="18" rx="3"></rect>
-                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
-                  <path d="M21 15l-5-5-9 9"></path>
-                </svg>
-                <span>Tap to take or upload a photo</span>
-              </div>
-              <div class="photo__scan" aria-hidden="true"></div>
-            </div>
-
-            <div class="row row--2">
-              <label class="btn btn--soft btn--block" for="camera-input">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
-                  <circle cx="12" cy="13" r="4"></circle>
-                </svg>
-                Camera
-              </label>
-              <input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
-
-              <label class="btn btn--ghost btn--block" for="photo-input">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
-                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
-                  <polyline points="17 8 12 3 7 8"></polyline>
-                  <line x1="12" y1="3" x2="12" y2="15"></line>
-                </svg>
-                Gallery
-              </label>
-              <input type="file" id="photo-input" accept="image/jpeg,image/png" hidden>
-            </div>
-
-            <p class="hint">JPEG or PNG · up to 5 MB · analysed locally in demo mode.</p>
-
-            <div id="detection-result" class="ai-card" hidden></div>
+            <div class="chips chips--gear" id="type-chips" role="group" aria-label="Gear type"></div>
           </div>
         </section>
 
-        <!-- gear type -->
-        <section class="card">
+        <!-- a net is a line: this is the whole report for nets and traps -->
+        <section class="card" id="span-card" hidden>
           <header class="card__head">
-            <h2 class="card__title">Gear type</h2>
+            <h2 class="card__title">Stretch the net</h2>
+            <span class="tag" id="span-badge" hidden>Set</span>
           </header>
-          <div class="card__body">
-            <div class="chips" id="type-chips" role="group" aria-label="Gear type"></div>
+          <div class="card__body stack-sm">
+            <p class="hint">
+              Drag from one end of the net to the other. Both ends have to be in
+              permitted water, at least <span id="span-min-shore">50</span> m from
+              the bank.
+            </p>
 
-            <!-- A net is a line, not a point. This only appears for gear that
-                 spans water: nets and traps. -->
-            <div class="span-row" id="span-row" hidden>
-              <div class="span-row__text">
-                <span class="span-row__title">Net line</span>
-                <span class="span-row__sub" id="span-summary">Not drawn yet</span>
-              </div>
-              <button type="button" class="btn btn--soft btn--sm" id="btn-draw-span">
-                Draw
-              </button>
-            </div>
+            <button type="button" class="draw-launch" id="btn-draw-span">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                   stroke-linecap="round" aria-hidden="true">
+                <circle cx="5" cy="19" r="2.2"></circle>
+                <circle cx="19" cy="5" r="2.2"></circle>
+                <line x1="6.6" y1="17.4" x2="17.4" y2="6.6"></line>
+              </svg>
+              <span class="draw-launch__text">
+                <strong id="draw-launch-title">Draw the net</strong>
+                <span id="span-summary">Nothing drawn yet</span>
+              </span>
+            </button>
 
-            <p class="hint">The AI pre-selects a type above the confidence threshold.</p>
+            <p class="fence-hint" id="span-fence" hidden></p>
           </div>
         </section>
 
-        <!-- location -->
-        <section class="card">
+        <!-- a buoy is a point -->
+        <section class="card" id="location-card" hidden>
           <header class="card__head">
-            <h2 class="card__title">Location</h2>
+            <h2 class="card__title">Where is it?</h2>
             <span class="tag" id="location-badge" hidden>Set</span>
           </header>
           <div class="card__body">
@@ -270,21 +250,62 @@
           </div>
         </section>
 
-        <!-- note -->
+        <!-- photo, optional, no model -->
         <section class="card">
           <header class="card__head">
-            <h2 class="card__title">Note</h2>
+            <h2 class="card__title">Photo</h2>
+            <span class="hint">optional</span>
+          </header>
+          <div class="card__body">
+            <div class="photo" id="photo-preview" tabindex="0" role="button" aria-label="Add a photo">
+              <div class="photo__empty">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" aria-hidden="true">
+                  <rect x="3" y="3" width="18" height="18" rx="3"></rect>
+                  <circle cx="8.5" cy="8.5" r="1.5"></circle>
+                  <path d="M21 15l-5-5-9 9"></path>
+                </svg>
+                <span>Tap to take or upload a photo</span>
+              </div>
+            </div>
+
+            <div class="row row--2">
+              <label class="btn btn--soft btn--block" for="camera-input">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z"></path>
+                  <circle cx="12" cy="13" r="4"></circle>
+                </svg>
+                Camera
+              </label>
+              <input type="file" id="camera-input" accept="image/*" capture="environment" hidden>
+
+              <label class="btn btn--ghost btn--block" for="photo-input">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                Gallery
+              </label>
+              <input type="file" id="photo-input" accept="image/jpeg,image/png" hidden>
+            </div>
+          </div>
+        </section>
+
+        <!-- description -->
+        <section class="card">
+          <header class="card__head">
+            <h2 class="card__title">Description</h2>
             <span class="hint">optional</span>
           </header>
           <div class="card__body">
             <textarea id="note-input" class="input input--area" rows="3" maxlength="500"
-                      placeholder="Anything worth noting at this spot…"></textarea>
+                      placeholder="What did you see? Condition, markings, anything a patrol should know…"></textarea>
           </div>
         </section>
 
         <div class="actions">
           <button type="button" class="btn btn--ghost btn--lg" id="btn-clear-report">Clear</button>
-          <button type="submit" class="btn btn--primary btn--lg" id="btn-submit-report">Save sighting</button>
+          <button type="submit" class="btn btn--primary btn--lg" id="btn-submit-report">Save report</button>
         </div>
       </form>
     </div>
@@ -382,27 +403,6 @@
         </div>
       </section>
 
-      <!-- Detection -->
-      <section class="card">
-        <header class="card__head">
-          <h2 class="card__title">Photo check</h2>
-          <span class="tag" id="ai-model-count">—</span>
-        </header>
-        <div class="card__body stack-sm">
-          <div class="ai-status-row">
-            <span class="ai-status-row__dot" id="ai-dot" data-state="off"></span>
-            <div class="ai-status-row__text">
-              <span class="ai-status-row__title" id="ai-headline">Not available</span>
-              <span class="ai-status-row__sub" id="ai-detail">Try again later.</span>
-            </div>
-          </div>
-          <p class="hint">
-            When you add a photo it is checked for fishing nets. You always confirm
-            the gear type yourself before saving.
-          </p>
-        </div>
-      </section>
-
       <!-- About -->
       <section class="card">
         <header class="card__head">
@@ -423,18 +423,21 @@
   <div id="span-picker-modal" class="sheet" hidden>
     <div class="sheet__panel">
       <header class="sheet__head">
-        <h2 class="card__title">Draw the net</h2>
-        <p class="hint">Tap where it starts, then where it ends</p>
+        <h2 class="card__title">Stretch the net</h2>
+        <p class="hint">Tap where it starts, then drag either end to adjust</p>
       </header>
 
       <div id="span-picker-map" class="sheet__map"></div>
 
       <div class="span-picker__foot">
-        <p class="span-hint" id="span-hint" data-state="idle">Tap the map where the net starts</p>
+        <p class="span-hint" id="span-hint" data-state="idle">Tap where the net starts — then drag either end to adjust</p>
         <div class="row row--2 sheet__actions">
+          <button type="button" class="btn btn--ghost" id="btn-span-start-here">Start at me</button>
           <button type="button" class="btn btn--ghost" id="btn-span-undo" disabled>Start over</button>
+        </div>
+        <div class="row row--2 sheet__actions">
           <button type="button" class="btn btn--soft" id="btn-span-cancel">Cancel</button>
-          <button type="button" class="btn btn--primary btn--block" id="btn-span-confirm" disabled>Use this line</button>
+          <button type="button" class="btn btn--primary" id="btn-span-confirm" disabled>Use this line</button>
         </div>
       </div>
     </div>
@@ -448,14 +451,72 @@
         <p class="hint">Tap the map or drag the pin</p>
       </header>
       <div id="map-picker-map" class="sheet__map"></div>
-      <div class="row row--2 sheet__actions">
-        <button type="button" class="btn btn--ghost" id="btn-map-picker-cancel">Cancel</button>
-        <button type="button" class="btn btn--primary" id="btn-map-picker-confirm">Use this point</button>
+      <div class="span-picker__foot">
+        <p class="fence-hint" id="picker-fence" hidden></p>
+        <div class="row row--2 sheet__actions">
+          <button type="button" class="btn btn--ghost" id="btn-map-picker-cancel">Cancel</button>
+          <button type="button" class="btn btn--primary" id="btn-map-picker-confirm">Use this point</button>
+        </div>
       </div>
     </div>
   </div>
 
   <!-- ============ BOTTOM NAV ============ -->
+  <!-- ============ MY GEAR SCREEN ============ -->
+  <div id="screen-gear" class="screen">
+    <header class="app-bar app-bar--sub">
+      <button type="button" class="icon-btn" id="btn-back-gear" aria-label="Back to map">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <polyline points="15 18 9 12 15 6"></polyline>
+        </svg>
+      </button>
+      <h1 class="app-bar__title">My nets</h1>
+      <span class="app-bar__spacer"></span>
+    </header>
+
+    <div class="screen__body stack">
+      <section class="card">
+        <header class="card__head">
+          <h2 class="card__title">Register a net</h2>
+        </header>
+        <div class="card__body stack-sm">
+          <p class="hint">
+            Register a net before you set it. If someone finds it and reports it,
+            patrol sees that it belongs to you instead of pulling it out as
+            abandoned gear.
+          </p>
+
+          <button type="button" class="btn btn--primary btn--block" id="btn-register-net">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" aria-hidden="true">
+              <circle cx="5" cy="19" r="2.2"></circle>
+              <circle cx="19" cy="5" r="2.2"></circle>
+              <line x1="6.6" y1="17.4" x2="17.4" y2="6.6"></line>
+            </svg>
+            Draw the net and get a code
+          </button>
+
+          <p class="note" id="gear-status" data-tone="muted"></p>
+        </div>
+      </section>
+
+      <section class="card">
+        <header class="card__head">
+          <h2 class="card__title">Yours</h2>
+          <span class="tag" id="gear-count">0</span>
+        </header>
+        <div class="card__body stack-sm">
+          <div id="gear-list" class="gear-list"></div>
+          <div id="gear-empty" class="empty-state" hidden>
+            <p>No nets registered</p>
+            <p class="hint">A code takes about ten seconds to make.</p>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
   <nav class="tabbar" aria-label="Main navigation">
     <button type="button" class="tab is-active" data-screen="map">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
@@ -470,6 +531,14 @@
       </svg>
       <span>Report</span>
     </button>
+    <button type="button" class="tab" data-screen="gear">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+        <circle cx="5" cy="19" r="2.2"></circle>
+        <circle cx="19" cy="5" r="2.2"></circle>
+        <line x1="6.6" y1="17.4" x2="17.4" y2="6.6"></line>
+      </svg>
+      <span>My nets</span>
+    </button>
     <button type="button" class="tab" data-screen="settings">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
         <circle cx="12" cy="12" r="3"></circle>
@@ -482,21 +551,29 @@
   <!-- ============ scripts ============ -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/status.js?v=2026.11.27.9"></script>
-  <script src="js/devices.js?v=2026.11.27.9"></script>
-  <script src="js/shore.js?v=2026.11.27.9"></script>
-  <script src="js/location.js?v=2026.11.27.9"></script>
-  <script src="js/registry.js?v=2026.11.27.9"></script>
-  <script src="js/map.js?v=2026.11.27.9"></script>
-  <script src="js/ui.js?v=2026.11.27.9"></script>
-  <script src="js/detection.js?v=2026.11.27.9"></script>
-  <script src="js/store.js?v=2026.11.27.9"></script>
+  <script src="js/status.js?v=2026.11.28.4"></script>
+  <script src="js/devices.js?v=2026.11.28.4"></script>
+  <script src="js/gear.js?v=2026.11.28.4"></script>
+  <script src="js/shore.js?v=2026.11.28.4"></script>
+  <script src="js/location.js?v=2026.11.28.4"></script>
+  <script src="js/registry.js?v=2026.11.28.4"></script>
+  <script src="js/map.js?v=2026.11.28.4"></script>
+  <script src="js/ui.js?v=2026.11.28.4"></script>
+  <script src="js/store.js?v=2026.11.28.4"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
-  <script src="js/auth.js?v=2026.11.27.9"></script>
-  <script src="js/app.js?v=2026.11.27.9"></script>
+  <script src="js/auth.js?v=2026.11.28.4"></script>
+  <script src="js/app.js?v=2026.11.28.4"></script>
 </body>
 </html>
+
+
+
+
+
+
+
+
 
 
 

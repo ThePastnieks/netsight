@@ -1,15 +1,21 @@
 ﻿// NetSight Application
-// Wires the map, reporting flow, detection and storage together.
+// Wires the map, the reporting flow and storage together.
+//
+// The rule this file enforces: gear only goes in permitted water. Not a warning
+// to click past — a refusal. A net is a line, so the line itself is checked, not
+// just its ends.
 
 const App = (function() {
   'use strict';
 
   let sightings = [];
-  let isInspectorMode = false;
   let unsubRealtime = null;
-  let reportLocation = null;
-  let reportSpan = null;   // [[lat,lon],[lat,lon]] for nets and traps
-  let detecting = false;
+  let reportLocation = null;   // { lat, lon, accuracy } — a point, for buoys
+  let reportSpan = null;       // [[lat,lon],[lat,lon]] — a line, for nets
+  let submitting = false;
+
+  // Gear that lies across the water rather than sitting at one spot.
+  const SPANNING_TYPES = ['net', 'trap'];
 
   // ------------------------------------------------------------------ init
 
@@ -22,23 +28,19 @@ const App = (function() {
     Auth.mount(session);
     syncAccountCard(session);
     bindAccount();
-    Detect.load();
-
-    isInspectorMode = new URLSearchParams(window.location.search).get('inspector') === 'true';
 
     UIModule.init();
     LocationModule.init();
-    syncDetectChrome();
 
     await RegistryModule.loadRegistry();
     await Shore.load();
     await Devices.load();
+    await GearModule.load();
 
     const map = MapModule.initMap('map', CONFIG.MAP_CENTER, CONFIG.MAP_ZOOM);
     if (!map) UIModule.showToast('Map failed to load', 'error');
 
     setupEventListeners();
-    syncDetectChrome();
     await loadSightings();
 
     if (UIModule.getCurrentScreen() === 'map') startLocationTracking();
@@ -85,11 +87,17 @@ const App = (function() {
       UIModule.showScreen('map');
       startLocationTracking();
     });
+    document.getElementById('btn-back-gear')?.addEventListener('click', () => {
+      UIModule.showScreen('map');
+      startLocationTracking();
+    });
+    document.getElementById('btn-register-net')?.addEventListener('click', startRegisterNet);
 
     document.querySelectorAll('.tab[data-screen], .nav-item[data-screen]').forEach(item => {
       item.addEventListener('click', () => {
         const screen = item.dataset.screen;
         if (screen === 'report') { openReportScreen(); return; }
+        if (screen === 'gear') { openGearScreen(); return; }
         UIModule.showScreen(screen);
         if (screen === 'map') {
           startLocationTracking();
@@ -118,19 +126,30 @@ const App = (function() {
     document.getElementById('btn-map-picker-cancel')?.addEventListener('click', () => MapModule.closePicker());
     document.getElementById('btn-map-picker-confirm')?.addEventListener('click', () => MapModule.confirmPicker());
 
-    // Nets and traps are a line between two anchors, not a point.
+    // One action for a net: stretch it. There is no separate point to place.
     document.getElementById('btn-draw-span')?.addEventListener('click', openSpanPicker);
     document.getElementById('btn-span-undo')?.addEventListener('click', () => MapModule.clearSpan());
+    document.getElementById('btn-span-start-here')?.addEventListener('click', () => {
+      if (!MapModule.spanStartHere()) {
+        UIModule.showToast('No GPS fix yet — tap the map instead', 'warning');
+      }
+    });
     document.getElementById('btn-span-confirm')?.addEventListener('click', () => MapModule.confirmSpan());
     document.getElementById('btn-span-cancel')?.addEventListener('click', () => MapModule.closeSpanPicker());
 
     UIModule.setupTypeChips('type-chips');
 
-    // The net line control only exists for gear that spans water.
+    // Which input a type needs depends on whether it spans water.
     document.getElementById('type-chips')?.addEventListener('click', () => {
-      setTimeout(syncSpanRow, 0);
+      setTimeout(syncReportCards, 0);
     });
-    syncSpanRow();
+    syncReportCards();
+
+    document.getElementById('btn-recentre')?.addEventListener('click', () => {
+      if (!MapModule.recentre()) {
+        UIModule.showToast('Waiting for a GPS fix', 'info');
+      }
+    });
 
     const registryToggle = document.getElementById('toggle-registry');
     registryToggle?.addEventListener('change', async e => {
@@ -138,8 +157,6 @@ const App = (function() {
       UIModule.showToast(e.target.checked ? 'Registry layer on' : 'Registry layer off', 'info');
     });
 
-    // Buoys on the water. On by default — an obstacle you cannot see is the
-    // whole problem this app exists to fix.
     const deviceToggle = document.getElementById('toggle-devices');
     if (deviceToggle) {
       MapModule.renderDevices(Devices.all());
@@ -161,7 +178,6 @@ const App = (function() {
       });
     }
 
-
     // Keyboard: R = new report, Esc = back to map
     document.addEventListener('keydown', e => {
       if (e.target.matches('input, textarea, select')) return;
@@ -179,28 +195,46 @@ const App = (function() {
     LocationModule.startWatch(
       pos => {
         MapModule.showUserPosition(pos.lat, pos.lon, pos.accuracy);
-        if (!reportLocation) updateReportLocationDisplay();
+        if (!reportLocation && !reportSpan) updateReportLocationDisplay();
       },
-      err => console.warn('Location unavailable:', err.message)
+      err => {
+        console.warn('Location unavailable:', err.message);
+        const readout = document.getElementById('me-readout');
+        if (readout) {
+          readout.dataset.state = 'idle';
+          readout.textContent = 'Location unavailable — pick a spot on the map';
+        }
+      }
     );
   }
 
-  // ------------------------------------------------------------ net span
+  // ----------------------------------------------------------- report cards
 
-  // Only gear that spans water gets the line control.
-  const SPANNING_TYPES = ['net', 'trap'];
-
-  function syncSpanRow() {
-    const row = document.getElementById('span-row');
-    if (!row) return;
+  // A net gets the stretch control and no location card, because the line *is*
+  // the location. A buoy gets the location card and no stretch control. Asking
+  // for both was the thing that made this confusing.
+  function syncReportCards() {
+    const spanCard = document.getElementById('span-card');
+    const locationCard = document.getElementById('location-card');
 
     const type = UIModule.getSelectedTypeChip('type-chips');
-    const wants = SPANNING_TYPES.includes(type);
+    const wantsLine = SPANNING_TYPES.includes(type);
 
-    row.hidden = !wants;
+    // Nothing is shown until a type is chosen. Showing both cards and asking
+    // for a point and a line was the confusion this replaces.
+    if (spanCard) spanCard.hidden = !wantsLine;
+    if (locationCard) locationCard.hidden = !type || wantsLine;
 
-    // Changing to a type that does not span water drops any line already drawn.
-    if (!wants && reportSpan) {
+    const minShore = document.getElementById('span-min-shore');
+    if (minShore) minShore.textContent = String(CONFIG.DEVICES.minShoreMetres);
+
+    // Switching type drops whatever the other one had collected, so a stale
+    // line cannot be saved as a buoy or the other way round.
+    if (wantsLine && reportLocation) {
+      reportLocation = null;
+      updateReportLocationDisplay();
+    }
+    if (!wantsLine && reportSpan) {
       reportSpan = null;
       MapModule.clearSpan();
     }
@@ -209,77 +243,65 @@ const App = (function() {
   }
 
   function updateSpanSummary() {
-    const el = document.getElementById('span-summary');
-    const btn = document.getElementById('btn-draw-span');
-    if (!el) return;
+    const summary = document.getElementById('span-summary');
+    const title = document.getElementById('draw-launch-title');
+    const badge = document.getElementById('span-badge');
+    const fence = document.getElementById('span-fence');
+
+    if (!summary) return;
 
     if (!reportSpan) {
-      el.textContent = 'Not drawn yet';
-      if (btn) btn.textContent = 'Draw';
+      summary.textContent = 'Nothing drawn yet';
+      if (title) title.textContent = 'Draw the net';
+      if (badge) badge.hidden = true;
+      if (fence) fence.hidden = true;
       return;
     }
 
-    const metres = Devices.haversine(
-      reportSpan[0][0], reportSpan[0][1],
-      reportSpan[1][0], reportSpan[1][1]
-    );
+    const metres = Shore.spanLength(reportSpan[0], reportSpan[1]);
+    const check = Shore.checkSpan(reportSpan[0], reportSpan[1]);
 
-    el.textContent = Math.round(metres) + ' m between the anchors';
-    if (btn) btn.textContent = 'Redraw';
+    summary.textContent = Math.round(metres) + ' m long';
+    if (title) title.textContent = 'Redraw the net';
+    if (badge) badge.hidden = false;
+
+    if (fence) {
+      fence.hidden = false;
+      fence.dataset.state = check.allowed ? 'ok' : 'blocked';
+      fence.textContent = check.allowed
+        ? check.reason
+        : check.reason + ' — redraw it inside the water';
+    }
   }
 
   function openSpanPicker() {
     const start = reportLocation || LocationModule.getLastPosition() || null;
-    MapModule.openSpanPicker(points => {
+    MapModule.openSpanPicker((points, check) => {
       reportSpan = points;
       updateSpanSummary();
-      UIModule.showToast('Net line set', 'success');
+      UIModule.showToast(
+        check && check.allowed ? 'Net line set' : 'Net line set',
+        'success'
+      );
     }, start);
   }
+
   // ------------------------------------------------------------- report flow
 
   function openReportScreen() {
     const last = LocationModule.getLastPosition();
     reportLocation = last ? { lat: last.lat, lon: last.lon, accuracy: last.accuracy } : null;
     updateReportLocationDisplay();
+    syncReportCards();
     UIModule.showScreen('report');
     LocationModule.stopWatch();
   }
 
-  async function onPhotoSelected(file) {
-    if (!file || detecting) return;
-
-    detecting = true;
-
-    UIModule.hideDetectionResult();
+  function onPhotoSelected() {
+    // The photo is evidence, nothing more. No model reads it.
     const preview = document.getElementById('photo-preview');
-    preview?.classList.add('photo--scanning');
-    UIModule.showLoading('Analysing photo…');
-
-    try {
-      const result = await Detect.analyze(file, {
-        onProgress: p => {
-          const msg = document.getElementById('loading-message');
-          if (msg) msg.textContent = `Analysing photo… ${Math.round(p * 100)}%`;
-        }
-      });
-
-      UIModule.showDetectionResult(result);
-
-      if (!result.needsConfirmation && result.primary_class !== 'none') {
-        document.querySelectorAll('#type-chips .type-chip').forEach(chip => {
-          chip.classList.toggle('chip--active', chip.dataset.class === result.primary_class);
-        });
-      }
-    } catch (err) {
-      console.error('Detection failed:', err);
-      UIModule.showToast('AI detection failed: ' + err.message, 'error');
-    } finally {
-      preview?.classList.remove('photo--scanning');
-      UIModule.hideLoading();
-      detecting = false;
-      syncDetectChrome();
-    }
+    const badge = document.getElementById('photo-badge');
+    if (preview && preview.dataset.hasPhoto === '1' && badge) badge.hidden = false;
   }
 
   async function useCurrentGPS() {
@@ -339,7 +361,6 @@ const App = (function() {
     const minShore = CONFIG.DEVICES.minShoreMetres;
 
     hint.hidden = false;
-    hint.hidden = false;
 
     // "idle" is only for the case where nobody has drawn a shoreline yet — a
     // real refusal (off the water, too close) is always "blocked".
@@ -355,40 +376,73 @@ const App = (function() {
       : fence.reason;
   }
 
+  // The one place that decides whether a report may be saved. Returns null when
+  // it is fine, or the reason it is not.
+  function checkReport() {
+    const type = UIModule.getSelectedTypeChip('type-chips');
+
+    if (!type) return 'Pick what you found first';
+
+    if (SPANNING_TYPES.includes(type)) {
+      if (!reportSpan) return 'Stretch the net on the map first';
+
+      const check = Shore.checkSpan(reportSpan[0], reportSpan[1]);
+      if (!check.allowed) return check.reason;
+
+      return null;
+    }
+
+    const location = reportLocation || LocationModule.getLastPosition();
+    if (!location) return 'Set the location first';
+
+    const fence = Devices.checkGeofence(location.lat, location.lon);
+    if (!fence.allowed) return fence.reason;
+
+    return null;
+  }
+
   async function handleSubmitReport(e) {
     e.preventDefault();
+    if (submitting) return;
+
     const submitBtn = document.getElementById('btn-submit-report');
-    if (submitBtn) submitBtn.disabled = true;
 
     try {
-      const photoFile = UIModule.getSelectedPhotoFile();
       const userClass = UIModule.getSelectedTypeChip('type-chips');
-      const location = reportLocation || LocationModule.getLastPosition();
       const note = (document.getElementById('note-input')?.value || '').trim();
 
-      if (!userClass) { UIModule.showToast('Pick the gear type first', 'warning'); return; }
-      if (!location) { UIModule.showToast('Set the location first', 'warning'); return; }
-
-      // Gear may only go in permitted water, at least minShoreMetres from shore.
-      const fence = Devices.checkGeofence(location.lat, location.lon);
-      if (!fence.allowed) {
-        const proceed = await UIModule.confirm(
-          fence.reason + '. Report it anyway?',
-          { title: 'Outside the permitted area', confirmLabel: 'Report anyway', danger: true }
-        );
-        if (!proceed) {
-          UIModule.showToast('Report cancelled', 'info');
-          return;
-        }
+      // No override, no "report anyway". The rule is the rule, and saying so
+      // here is kinder than letting someone file a report that cannot be acted
+      // on because it is on a pavement.
+      const problem = checkReport();
+      if (problem) {
+        UIModule.showToast(problem, 'error');
+        return;
       }
 
-      const detection = UIModule.getDetectionResult();
+      submitting = true;
+      if (submitBtn) submitBtn.disabled = true;
+
+      const photoFile = UIModule.getSelectedPhotoFile();
+      const isLine = SPANNING_TYPES.includes(userClass);
+
+      // A net's anchor is the middle of the line; the line itself travels in
+      // `span`. One coordinate pair keeps the map, the list and the database
+      // working without a special case for lines.
+      const location = isLine
+        ? { lat: Shore.spanMidpoint(reportSpan[0], reportSpan[1])[0],
+            lon: Shore.spanMidpoint(reportSpan[0], reportSpan[1])[1],
+            accuracy: null }
+        : (reportLocation || LocationModule.getLastPosition());
+
       UIModule.showLoading('Saving…');
 
       const id = (crypto.randomUUID && crypto.randomUUID()) || 'local-' + Date.now().toString(36);
       const photoUrl = photoFile ? await StoreModule.uploadPhoto(photoFile, id) : '';
 
-      const match = RegistryModule.matchRegistry(
+      // Registered gear wins over the CSV: it carries the owner's own code.
+      const gearMatch = GearModule.matchAt(location.lat, location.lon, userClass, CONFIG.MATCH_RADIUS_M);
+      const csvMatch = RegistryModule.matchRegistry(
         { lat: location.lat, lon: location.lon, user_class: userClass },
         CONFIG.MATCH_RADIUS_M
       );
@@ -398,15 +452,15 @@ const App = (function() {
         lat: location.lat,
         lon: location.lon,
         accuracy_m: location.accuracy,
-        detected_class: detection ? detection.primary_class : 'unknown',
-        confidence: detection ? detection.primary_confidence : 0,
+        detected_class: 'unknown',
+        confidence: 0,
         user_class: userClass,
-        registry_id: match ? match.item.id : null,
-        registry_match: !!match,
+        registry_id: gearMatch ? gearMatch.gear.code : (csvMatch ? csvMatch.item.id : null),
+        registry_match: !!(gearMatch || csvMatch),
         status: 'new',
         report_reason: null,
         note,
-        span: reportSpan
+        span: isLine ? reportSpan : null
       });
 
       if (!payload.valid) {
@@ -416,7 +470,13 @@ const App = (function() {
 
       await StoreModule.createSightingUnified({ id, ...payload.normalized });
 
-      UIModule.showToast('Sighting saved', 'success');
+      UIModule.showToast(
+        gearMatch
+          ? 'Saved — registered to ' + gearMatch.gear.ownerName
+          : (csvMatch ? 'Saved — matches registered gear' : 'Report saved'),
+        'success'
+      );
+
       clearReportForm();
       UIModule.showScreen('map');
       startLocationTracking();
@@ -426,25 +486,180 @@ const App = (function() {
       UIModule.showToast('Save failed: ' + err.message, 'error');
     } finally {
       UIModule.hideLoading();
+      submitting = false;
       if (submitBtn) submitBtn.disabled = false;
     }
   }
 
   function clearReportForm() {
     UIModule.clearPhotoPreview('photo-preview', 'photo-input');
-    UIModule.hideDetectionResult();
+    const badge = document.getElementById('photo-badge');
+    if (badge) badge.hidden = true;
+
     const camera = document.getElementById('camera-input');
     if (camera) camera.value = '';
+
     document.querySelectorAll('#type-chips .type-chip').forEach(c => c.classList.remove('chip--active'));
     const note = document.getElementById('note-input');
     if (note) note.value = '';
+
     reportLocation = null;
     reportSpan = null;
     MapModule.clearSpan();
-    syncSpanRow();
+    syncReportCards();
     updateReportLocationDisplay();
   }
 
+
+  // -------------------------------------------------------------- my nets
+
+  let registering = false;
+
+  async function openGearScreen() {
+    await GearModule.load();
+    renderGearList();
+    UIModule.showScreen('gear');
+    LocationModule.stopWatch();
+  }
+
+  function renderGearList() {
+    const host = document.getElementById('gear-list');
+    const empty = document.getElementById('gear-empty');
+    const count = document.getElementById('gear-count');
+    if (!host) return;
+
+    const list = GearModule.mine();
+    if (count) count.textContent = String(list.length);
+
+    if (!list.length) {
+      host.innerHTML = '';
+      if (empty) empty.hidden = false;
+      return;
+    }
+
+    if (empty) empty.hidden = true;
+
+    host.innerHTML = list.map(gear => {
+      const expired = GearModule.isExpired(gear);
+      const metres = Array.isArray(gear.span)
+        ? Math.round(Shore.spanLength(gear.span[0], gear.span[1]))
+        : null;
+
+      return [
+        '<article class="gear-item' + (expired ? ' gear-item--expired' : '') + '" data-gear="' + escapeAttr(gear.id) + '">',
+        '  <div class="gear-item__code">',
+        '    <span class="gear-item__code-label">Code</span>',
+        '    <span class="gear-item__code-value">' + escapeHtml(gear.code) + '</span>',
+        '  </div>',
+        '  <div class="gear-item__body">',
+        '    <span class="gear-item__label">' + escapeHtml(gear.label) + '</span>',
+        '    <span class="gear-item__meta">',
+        escapeHtml(gear.type),
+        metres ? ' · ' + metres + ' m' : '',
+        expired ? ' · expired' : ' · active',
+        '    </span>',
+        '  </div>',
+        '  <button type="button" class="icon-btn icon-btn--sm" data-withdraw="' + escapeAttr(gear.id) + '"',
+        '          aria-label="Withdraw ' + escapeAttr(gear.code) + '">',
+        '    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">',
+        '      <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>',
+        '    </svg>',
+        '  </button>',
+        '</article>'
+      ].join('');
+    }).join('');
+
+    host.querySelectorAll('[data-withdraw]').forEach(btn => {
+      btn.addEventListener('click', () => withdrawGear(btn.dataset.withdraw));
+    });
+  }
+
+  async function withdrawGear(id) {
+    const gear = GearModule.get(id);
+    if (!gear) return;
+
+    const ok = await UIModule.confirm(
+      'Withdraw ' + gear.code + '? Reports near it will no longer be matched to you.',
+      { title: 'Withdraw this net', confirmLabel: 'Withdraw', danger: true }
+    );
+    if (!ok) return;
+
+    if (await GearModule.remove(id)) {
+      renderGearList();
+      UIModule.showToast('Net withdrawn', 'success');
+    } else {
+      UIModule.showToast('Could not withdraw it', 'error');
+    }
+  }
+
+  // Registering is one flow: stretch the net, name it, get a code. The code is
+  // the point — it is what gets written on the buoy so a finder can identify it.
+  async function startRegisterNet() {
+    if (registering) return;
+    registering = true;
+
+    const status = document.getElementById('gear-status');
+    const say = (msg, tone) => {
+      if (status) { status.textContent = msg; status.dataset.tone = tone; }
+    };
+
+    try {
+      say('Draw the net on the map…', 'info');
+
+      const span = await new Promise(resolve => {
+        MapModule.openSpanPicker((points) => resolve(points), LocationModule.getLastPosition());
+      });
+
+      if (!span) { say('', 'muted'); return; }
+
+      const label = await UIModule.prompt(
+        'What do you call this net?',
+        'Net ' + new Date().toLocaleDateString(),
+        { title: 'Name the net', confirmLabel: 'Next' }
+      );
+      if (label === null) { say('', 'muted'); return; }
+
+      const result = await GearModule.add({
+        label: label || 'Net',
+        type: 'net',
+        span
+      });
+
+      if (!result.ok) {
+        say(result.message, 'error');
+        UIModule.showToast(result.message, 'error');
+        return;
+      }
+
+      renderGearList();
+      say('Registered as ' + result.gear.code, 'ok');
+
+      // The code is the deliverable: show it large enough to read off a phone
+      // and write on a buoy.
+      await UIModule.showCodeModal(
+        'Your net code',
+        result.gear.code,
+        'Write this on the buoy. A finder can look it up, and patrol sees it is yours.'
+      );
+
+      UIModule.showToast('Net registered', 'success');
+    } catch (err) {
+      console.error('Register failed:', err);
+      say('Could not register: ' + err.message, 'error');
+    } finally {
+      registering = false;
+    }
+  }
+
+  function escapeHtml(v) {
+    return String(v == null ? '' : v).replace(/[&<>"']/g, ch => ({
+      '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+    })[ch]);
+  }
+
+  function escapeAttr(v) {
+    return escapeHtml(v);
+  }
   // ------------------------------------------------------- detail / actions
 
   function showDetail(sighting) {
@@ -534,39 +749,6 @@ const App = (function() {
     });
   }
 
-  // Plain-language state of the photo check. No endpoint, no admin wording.
-  function syncDetectChrome() {
-    const configured = !!Detect.get().endpoint;
-
-    const pill = document.getElementById('ai-pill');
-    if (pill) {
-      pill.dataset.mode = configured ? 'live' : 'off';
-      const text = pill.querySelector('.pill__text');
-      if (text) text.textContent = configured ? 'Photo check on' : 'Photo check off';
-    }
-
-    const dot = document.getElementById('ai-dot');
-    const headline = document.getElementById('ai-headline');
-    const detail = document.getElementById('ai-detail');
-    const count = document.getElementById('ai-model-count');
-
-    if (dot) dot.dataset.state = configured ? 'ready' : 'off';
-
-    if (headline) {
-      headline.textContent = configured ? 'Ready' : 'Not available';
-    }
-
-    if (detail) {
-      detail.textContent = configured
-        ? 'Photos are checked for fishing nets'
-        : 'Photos are not checked right now — pick the type yourself';
-    }
-
-    if (count) count.textContent = configured ? 'on' : 'off';
-
-    document.body.dataset.ai = configured ? 'ready' : 'off';
-  }
-
   // ----------------------------------------------------------------- cleanup
 
   window.addEventListener('beforeunload', () => {
@@ -579,33 +761,14 @@ const App = (function() {
     showDetail,
     showReport,
     showStatusChange,
-    isInspector: () => isInspectorMode,
     getSightings: () => sightings,
-    setReportLocation
+    setReportLocation,
+    checkReport
   };
 })();
 
 document.addEventListener('DOMContentLoaded', () => App.init());
 window.App = App;
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
 
 
 

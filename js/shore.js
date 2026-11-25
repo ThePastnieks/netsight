@@ -530,6 +530,68 @@ const Shore = (function() {
     };
   }
 
+  // A net is a line, so checking one end is not enough: it can start in
+  // permitted water and end on the bank. This samples the whole span.
+  function checkSpan(a, b, samples) {
+    if (!Array.isArray(a) || !Array.isArray(b)) {
+      return { allowed: false, reason: 'The net line is not drawn', badPoint: null };
+    }
+
+    const steps = Math.max(8, samples || 24);
+    let worst = null;
+    let minShore = Infinity;
+
+    for (let i = 0; i <= steps; i++) {
+      const t = i / steps;
+      const lat = a[0] + (b[0] - a[0]) * t;
+      const lon = a[1] + (b[1] - a[1]) * t;
+      const fence = checkGeofence(lat, lon);
+
+      if (!fence.allowed) {
+        // Report the worst violation, not the first, so the message is the one
+        // that matters: off the water beats too close to shore.
+        if (!worst || (worst.onWater && !fence.onWater)) {
+          worst = Object.assign({ lat, lon }, fence);
+        }
+        if (fence.onWater === false) break;   // nothing worse can follow
+      }
+
+      if (Number.isFinite(fence.shoreDistance)) {
+        minShore = Math.min(minShore, fence.shoreDistance);
+      }
+    }
+
+    if (worst) {
+      return {
+        allowed: false,
+        reason: worst.reason,
+        badPoint: { lat: worst.lat, lon: worst.lon },
+        shoreDistance: Number.isFinite(minShore) ? minShore : null
+      };
+    }
+
+    return {
+      allowed: true,
+      reason: Number.isFinite(minShore)
+        ? Math.round(minShore) + ' m from shore at the closest point'
+        : 'Inside the permitted water',
+      badPoint: null,
+      shoreDistance: Number.isFinite(minShore) ? minShore : null
+    };
+  }
+
+  // The closest point on the span to a given spot, for placing the pin that
+  // represents a net on the map.
+  function spanMidpoint(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b)) return null;
+    return [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2];
+  }
+
+  // Length of a span in metres.
+  function spanLength(a, b) {
+    if (!Array.isArray(a) || !Array.isArray(b)) return 0;
+    return haversine(a[0], a[1], b[0], b[1]);
+  }
   return {
     KINDS,
     load,
@@ -545,6 +607,9 @@ const Shore = (function() {
     permittedAreas,
     offsetInward,
     checkGeofence,
+    checkSpan,
+    spanMidpoint,
+    spanLength,
     distanceToShape,
     distanceToEdge,
     pointInPolygon,
@@ -558,6 +623,7 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.Shore = Shore;
 }
+
 
 
 
