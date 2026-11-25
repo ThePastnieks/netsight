@@ -11,7 +11,7 @@
 
   <script>
   (function () {
-    var BUILD = '2026.11.26.4';
+    var BUILD = '2026.11.27.2';
     var KEY = 'netsight_build';
     var seen = null;
     try { seen = localStorage.getItem(KEY); } catch (e) {}
@@ -43,10 +43,10 @@
 
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/netsight-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css?v=2026.11.26.4">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.27.2">
 
-  <script src="js/config.js?v=2026.11.26.4"></script>
-  <script src="js/theme.js?v=2026.11.26.4"></script>
+  <script src="js/config.js?v=2026.11.27.2"></script>
+  <script src="js/theme.js?v=2026.11.27.2"></script>
 </head>
 <body data-page="login">
 
@@ -61,6 +61,8 @@
     </header>
 
     <div class="login__card">
+
+      <div class="mode-note" id="mode-note" hidden></div>
 
       <div class="auth-tabs" role="tablist">
         <button type="button" class="auth-tab is-active" data-auth-tab="login" role="tab">
@@ -141,7 +143,10 @@
 
   </main>
 
-  <script src="js/auth.js?v=2026.11.26.4"></script>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
+
+
+  <script src="js/auth.js?v=2026.11.27.2"></script>
   <script>
   (function () {
     'use strict';
@@ -240,12 +245,13 @@
 
       location.replace(Auth.pageFor(result.session.role));
     });
-
     // ------------------------------------------------------------- boot
 
     (async function boot() {
       Theme.init();
-      await Auth.seed();
+
+      // Restores an existing Supabase session, or seeds the local demo admin.
+      await Auth.init();
 
       const existing = Auth.current();
       if (existing) {
@@ -253,15 +259,41 @@
         return;
       }
 
-      // Show the seeded administrator once, so the first run is not a dead end.
-      const users = Auth.listUsers();
-      const onlySeedAdmin = users.length === 1 && users[0].role === 'admin';
+      const modeNote = document.getElementById('mode-note');
 
-      if (onlySeedAdmin) {
-        seedNote.hidden = false;
-        seedNote.innerHTML =
-          'First run — sign in as <b>admin</b> with password <b>admin123</b>, ' +
-          'then change it in Admin → Security.';
+      if (Auth.isCloud()) {
+        // Cloud mode: the first account to sign up becomes the administrator.
+        // Saying that out loud is the difference between a working install and
+        // a locked door.
+        const users = await Auth.listUsers();
+
+        if (modeNote) {
+          modeNote.hidden = false;
+          modeNote.dataset.mode = 'cloud';
+          modeNote.innerHTML = users.length === 0
+            ? 'Connected. No accounts yet — the first one you create becomes the <b>administrator</b>.'
+            : 'Connected. Sign in, or create an account — an administrator can promote you to Water Patrol.';
+        }
+      } else {
+        // Local mode: nothing leaves this browser, and that has consequences
+        // worth stating before someone types a password into it.
+        if (modeNote) {
+          modeNote.hidden = false;
+          modeNote.dataset.mode = 'local';
+          modeNote.innerHTML =
+            'Local mode — no database configured, so accounts and reports stay in ' +
+            '<b>this browser only</b>. Add Supabase keys to <code>js/config.js</code> to sync across devices.';
+        }
+
+        const users = await Auth.listUsers();
+        const onlySeedAdmin = users.length === 1 && users[0].role === 'admin';
+
+        if (onlySeedAdmin) {
+          seedNote.hidden = false;
+          seedNote.innerHTML =
+            'First run — sign in as <b>admin</b> with password <b>admin123</b>, ' +
+            'then change it in Admin → Security.';
+        }
       }
 
       document.getElementById('login-username').focus();
@@ -270,6 +302,11 @@
   </script>
 </body>
 </html>
+
+
+
+
+
 
 
 

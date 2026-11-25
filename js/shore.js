@@ -27,29 +27,37 @@ const Shore = (function() {
   let shapes = null;
 
   // ---------------------------------------------------------------- storage
+  //
+  // Cloud mode: shapes live in the `shore_shapes` table, so a bank drawn by an
+  // admin shows up for every user on every device. Local mode: localStorage,
+  // this browser only.
+  //
+  // all() stays synchronous because the map calls it while drawing. load()
+  // fills the cache first; the pages await it once at boot.
 
-  function read() {
-    if (shapes) return shapes;
+  let loaded = null;
 
+  // Uses Auth's client, not a new one: a second client would have no session and
+  // row level security would silently return nothing.
+  function db() {
+    if (typeof Auth === 'undefined' || !Auth.isCloud()) return null;
+    return Auth.client();
+  }
+
+  function readLocal() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed)) {
-          shapes = parsed;
-          return shapes;
-        }
+        if (Array.isArray(parsed)) return parsed;
       }
     } catch (err) {
       console.warn('Could not read shore shapes:', err);
     }
-
-    shapes = [];
-    return shapes;
+    return [];
   }
 
-  function write(list) {
-    shapes = list;
+  function writeLocal(list) {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify(list));
     } catch (err) {
@@ -57,60 +65,174 @@ const Shore = (function() {
     }
   }
 
+  // Loads shapes into the cache. Safe to call more than once.
+  function load() {
+    if (loaded) return loaded;
+
+    loaded = (async () => {
+      const client = db();
+
+      if (!client) {
+        shapes = readLocal();
+        return shapes;
+      }
+
+      const { data, error } = await client
+        .from('shore_shapes')
+        .select('id, kind, name, coords, lat, lon, radius, created_at')
+        .order('created_at', { ascending: true });
+
+      if (error) {
+        console.warn('Could not load shore shapes:', error.message);
+        shapes = [];
+        return shapes;
+      }
+
+      shapes = (data || []).map(row => ({
+        id: row.id,
+        kind: row.kind,
+        name: row.name,
+        coords: row.coords || undefined,
+        lat: row.lat,
+        lon: row.lon,
+        radius: row.radius,
+        createdAt: row.created_at
+      }));
+
+      return shapes;
+    })();
+
+    return loaded;
+  }
+
+  // Forces a re-read, e.g. after another admin changed something.
+  function reload() {
+    loaded = null;
+    shapes = null;
+    return load();
+  }
+
   function all() {
-    return read().map(s => Object.assign({}, s));
+    return (shapes || []).map(s => Object.assign({}, s));
   }
 
   function get(id) {
-    return read().find(s => s.id === id) || null;
-  }
-
-  function add(shape) {
-    const list = read();
-
-    const clean = normalise(shape);
-    if (!clean) return { ok: false, message: 'That shape is not usable' };
-
-    clean.id = clean.id || 'shore-' + Date.now().toString(36);
-    clean.createdAt = new Date().toISOString();
-
-    list.push(clean);
-    write(list);
-
-    return { ok: true, shape: clean };
-  }
-
-  function update(id, patch) {
-    const list = read();
-    const idx = list.findIndex(s => s.id === id);
-    if (idx === -1) return { ok: false, message: 'No such shape' };
-
-    const merged = normalise(Object.assign({}, list[idx], patch, { id }));
-    if (!merged) return { ok: false, message: 'That shape is not usable' };
-
-    merged.createdAt = list[idx].createdAt;
-    list[idx] = merged;
-    write(list);
-
-    return { ok: true, shape: merged };
-  }
-
-  function remove(id) {
-    const list = read();
-    const next = list.filter(s => s.id !== id);
-    if (next.length === list.length) return false;
-    write(next);
-    return true;
-  }
-
-  function clear() {
-    write([]);
+    return (shapes || []).find(s => s.id === id) || null;
   }
 
   function count() {
-    return read().length;
+    return (shapes || []).length;
   }
 
+  async function add(shape) {
+    const clean = normalise(shape);
+    if (!clean) return { ok: false, message: 'That shape is not usable' };
+
+    const client = db();
+
+    if (!client) {
+      clean.id = clean.id || 'shore-' + Date.now().toString(36);
+      clean.createdAt = new Date().toISOString();
+      shapes = (shapes || []).concat([clean]);
+      writeLocal(shapes);
+      return { ok: true, shape: clean };
+    }
+
+    const me = (typeof Auth !== 'undefined' && Auth.current()) || null;
+
+    const { data, error } = await client
+      .from('shore_shapes')
+      .insert({
+        kind: clean.kind,
+        name: clean.name,
+        coords: clean.coords || null,
+        lat: clean.lat ?? null,
+        lon: clean.lon ?? null,
+        radius: clean.radius ?? null,
+        created_by: me ? me.id : null
+      })
+      .select('id, kind, name, coords, lat, lon, radius, created_at')
+      .single();
+
+    if (error) return { ok: false, message: error.message };
+
+    const saved = {
+      id: data.id, kind: data.kind, name: data.name,
+      coords: data.coords || undefined,
+      lat: data.lat, lon: data.lon, radius: data.radius,
+      createdAt: data.created_at
+    };
+
+    shapes = (shapes || []).concat([saved]);
+    return { ok: true, shape: saved };
+  }
+
+  async function update(id, patch) {
+    const existing = get(id);
+    if (!existing) return { ok: false, message: 'No such shape' };
+
+    const merged = normalise(Object.assign({}, existing, patch, { id }));
+    if (!merged) return { ok: false, message: 'That shape is not usable' };
+
+    const client = db();
+
+    if (!client) {
+      shapes = shapes.map(s => s.id === id ? merged : s);
+      writeLocal(shapes);
+      return { ok: true, shape: merged };
+    }
+
+    const { error } = await client
+      .from('shore_shapes')
+      .update({
+        name: merged.name,
+        coords: merged.coords || null,
+        lat: merged.lat ?? null,
+        lon: merged.lon ?? null,
+        radius: merged.radius ?? null
+      })
+      .eq('id', id);
+
+    if (error) return { ok: false, message: error.message };
+
+    shapes = shapes.map(s => s.id === id ? merged : s);
+    return { ok: true, shape: merged };
+  }
+
+  async function remove(id) {
+    const client = db();
+
+    if (!client) {
+      const before = (shapes || []).length;
+      shapes = (shapes || []).filter(s => s.id !== id);
+      if (shapes.length === before) return false;
+      writeLocal(shapes);
+      return true;
+    }
+
+    const { error } = await client.from('shore_shapes').delete().eq('id', id);
+    if (error) {
+      console.warn('Could not delete shape:', error.message);
+      return false;
+    }
+
+    shapes = (shapes || []).filter(s => s.id !== id);
+    return true;
+  }
+
+  async function clear() {
+    const client = db();
+
+    if (!client) {
+      shapes = [];
+      writeLocal(shapes);
+      return;
+    }
+
+    const { error } = await client.from('shore_shapes').delete().neq('id', '00000000-0000-0000-0000-000000000000');
+    if (error) console.warn('Could not clear shapes:', error.message);
+    shapes = [];
+  }
   // ------------------------------------------------------------ validation
 
   function normalise(shape) {
@@ -329,7 +451,7 @@ const Shore = (function() {
   function permittedAreas() {
     const limit = CONFIG.DEVICES.minShoreMetres;
 
-    return read()
+    return all()
       .map(shape => {
         const zone = permittedOf(shape, limit);
         return zone ? Object.assign({ source: shape.id, name: shape.name }, zone) : null;
@@ -344,7 +466,7 @@ const Shore = (function() {
       return { allowed: false, onWater: false, shoreDistance: null, reason: 'No coordinates' };
     }
 
-    const list = read();
+    const list = all();
 
     if (!list.length) {
       return {
@@ -410,6 +532,8 @@ const Shore = (function() {
 
   return {
     KINDS,
+    load,
+    reload,
     all,
     get,
     add,
@@ -434,3 +558,7 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.Shore = Shore;
 }
+
+
+
+

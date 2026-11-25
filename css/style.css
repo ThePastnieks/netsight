@@ -2389,3 +2389,39 @@
     background: var(--surface-2);
     color: var(--muted);
   }
+
+/* ===================== AUTH MODE BANNER ================================ */
+@layer components {
+  .mode-note {
+    padding: var(--s3);
+    border-radius: var(--r-sm);
+    font-size: 11.5px;
+    line-height: 1.55;
+    text-align: center;
+    border: 1px solid var(--border);
+    background: var(--surface-2);
+    color: var(--muted);
+  }
+
+  .mode-note b { color: var(--text); }
+
+  .mode-note code {
+    font-family: var(--mono);
+    font-size: 10.5px;
+    padding: 1px 4px;
+    border-radius: 3px;
+    background: var(--surface-3);
+  }
+
+  .mode-note[data-mode='cloud'] {
+    border-color: color-mix(in oklab, var(--ok) 40%, transparent);
+    background: color-mix(in oklab, var(--ok) 10%, transparent);
+    color: var(--ok);
+  }
+
+  .mode-note[data-mode='local'] {
+    border-color: color-mix(in oklab, var(--warn) 45%, transparent);
+    background: var(--warn-soft);
+    color: var(--text);
+  }
+}

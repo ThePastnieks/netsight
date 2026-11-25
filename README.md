@@ -2,8 +2,12 @@
 
 Mobile-first web app for reporting lost or abandoned fishing gear on Riga's
 waterways. A photo goes to a trained model; the model answers whether there is a
-fishing net in the water. Accounts decide whether you report, work the case
-list, or administer.
+fishing net in the water. Accounts decide whether you report, work the case list,
+or administer.
+
+> **First time here?** Read [docs/SETUP.md](docs/SETUP.md) — ten minutes to a
+> working database. Without it the app runs in local mode and nothing leaves the
+> browser.
 
 ```bash
 cd C:\claudepro2\netsight
@@ -57,25 +61,29 @@ The same dropdown promotes to **Administrator** or demotes back to **User**. Two
 safeguards: you cannot delete your own account, and the last administrator cannot
 be demoted or deleted.
 
-### How accounts are stored
+### Where accounts live
 
-Passwords are hashed with **PBKDF2-SHA256** (120 000 iterations, a unique 16-byte
-salt per account) and kept in this browser's `localStorage` under
-`netsight_users`. The plain password is never written anywhere. A session lasts
-12 hours.
+Two modes, decided by whether `js/config.js` has Supabase keys:
 
-> This is a prototype: accounts live in the browser, not on a server. It routes
-> three kinds of user to three screens. It is not a substitute for real
-> server-side authentication.
+| | Local (no keys) | Cloud (keys set) |
+|---|---|---|
+| Accounts | this browser only | Supabase Auth, every device |
+| Shore shapes | this browser only | `shore_shapes` table |
+| Buoys | this browser only | `devices` table |
+| Sightings | this browser only | `sightings` table |
+| Photos | data URL in the row | Storage bucket |
 
----
+The sign-in screen says which mode it is in, so nobody is surprised later.
 
-> The build number lives in `js/config.js → NETSIGHT_BUILD`. Bump it on every
-> release — the HTML pages append `?v=<build>` to every local asset and purge
-> stale service workers, so the browser always loads the new files. There is no
-> service worker any more, and an old one from a previous build is unregistered
-> automatically on the first load of a new build — no manual cache clearing.
+**Cloud mode** signs in with a username, which is expanded to
+`<username>@netsight.local` for Supabase Auth. The first account to sign up
+becomes the administrator — a database trigger decides that, not the browser.
+Everyone after starts as a User.
 
+Roles are enforced by row level security in the database, not only by the
+interface. A User cannot delete a sighting even with the console open.
+
+See [docs/SETUP.md](docs/SETUP.md) for the ten-minute setup.
 ---
 
 ## What is in the box
@@ -264,36 +272,44 @@ Deletion is immediate and permanent.
 login.html                 Sign in / create account — the first screen
 index.html                 User app (map, report, settings)
 patrol.html                Water Patrol (map, cases, settings)
-admin.html                 Admin panel (points, detection, security)
-HARDWARE.md                Hardware spec read-through: what the device must do
+admin.html                 Admin panel (points, devices, shore, users)
+vercel.json                Vercel function config
+docs/SETUP.md              Ten-minute database setup — start here
+docs/HARDWARE.md           What the physical buoy must measure
 DETECT.md                  The model contract — read this to build the AI
 manifest.webmanifest       PWA metadata (install prompt, no service worker)
 css/style.css              Design system (tokens → base → components)
+api/
+  detect.js                Vercel: photo → verdict
+  telemetry.js             Vercel: buoy → database
+netlify/functions/
+  detect.js                Netlify twin of the above
+  telemetry.js             Netlify twin of the above
 js/
-  config.js                Build stamp, detection endpoint, map, thresholds
+  config.js                Supabase keys, build stamp, endpoint, thresholds
   theme.js                 system / light / dark, persisted
   status.js                Statuses, transitions, colours, validation
   location.js              Geolocation watch, manual point, Haversine
   registry.js              registry.csv parsing + matching
-  map.js                   Leaflet map, pins, filters, location picker
+  map.js                   Leaflet map, pins, filters, shore overlay, pickers
   ui.js                    Screens, sheets, toasts, verdict card, detail view
   detection.js             Sends the photo, normalises the model's reply
-  store.js                 Supabase CRUD with localStorage fallback
-  auth.js                  Accounts, PBKDF2 hashes, session, role guards
+  store.js                 Sightings CRUD (Supabase, localStorage fallback)
+  auth.js                  Accounts: Supabase Auth or local, roles, guards
   shore.js                 Hand-drawn shoreline, 50 m offset, geofence
   devices.js               Buoy fleet: telemetry, alerts
   patrol.js                Water Patrol: map + case table + status changes
-  admin.js                 Points, detection config, accounts, password
+  admin.js                 Points, devices, shore drawing, accounts
   app.js                   Wiring and user flows
-netlify/functions/telemetry.js  Buoy data in
-netlify/functions/detect.js The seam: replace runModel() with your model
 data/registry.csv          Registered gear
-supabase/migrations/       Postgres schema for the live backend
+supabase/migrations/       Postgres schema — run 003 to go live
 ```
 
-Load order: `config → theme → status → location → registry → map → ui →
-detection → store → auth → app` (patrol and admin swap the last two for their
-own module).
+Load order: `config → theme → status → shore → devices → location → registry →
+map → ui → detection → store → supabase-js → auth → page module`.
+
+`shore.js` and `devices.js` come before `map.js` because the map draws from
+them. `auth.js` comes after `supabase-js` because it builds the client.
 
 ---
 
@@ -306,14 +322,32 @@ own module).
 
 ---
 
-## Live backend (Supabase)
+## Backend
 
-1. Create a project, run `supabase/migrations/001_initial_schema.sql`.
-2. Create a public storage bucket `sightings-photos`.
-3. Put `SUPABASE_URL` / `SUPABASE_ANON_KEY` into `js/config.js`.
+Supabase provides Postgres, Auth and Storage. Everything the app needs is in
+[`supabase/migrations/`](supabase/migrations):
 
-Without a backend the app keeps its sightings in `localStorage` — nothing breaks.
+| File | What it does |
+|---|---|
+| `001_initial_schema.sql` | `sightings` table, indexes, photo bucket |
+| `002_device_telemetry.sql` | raw telemetry history, one row per report |
+| `003_full_schema.sql` | `profiles`, `shore_shapes`, `devices`, roles, RLS, realtime |
 
+Run `003` on a fresh project and the app is fully wired. Setup steps:
+[docs/SETUP.md](docs/SETUP.md).
+
+### Server functions
+
+Both hosts are supported; the same logic lives in two places because the
+signatures differ:
+
+| Job | Vercel | Netlify |
+|---|---|---|
+| Photo → verdict | `api/detect.js` | `netlify/functions/detect.js` |
+| Buoy → database | `api/telemetry.js` | `netlify/functions/telemetry.js` |
+
+Deploying to Vercel? `CONFIG.DETECT.endpoint` is `/api/detect` (the default).
+Netlify? Change it to `/.netlify/functions/detect`.
 ## Browser support
 
 Chrome/Edge 90+, Firefox 88+, Safari 14+. Requires ES2020, Geolocation,
@@ -322,6 +356,10 @@ FileReader, fetch, `color-mix()` (graceful fallback), CSS Grid.
 ## License
 
 MIT — prototype for demonstration purposes.
+
+
+
+
 
 
 

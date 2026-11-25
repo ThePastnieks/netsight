@@ -17,6 +17,9 @@ const Admin = (function() {
     Auth.mount(session);
     Detect.load();
 
+    await Shore.load();
+    await Devices.load();
+
     bindTabs();
     bindPoints();
     bindProviders();
@@ -684,7 +687,7 @@ const Admin = (function() {
 
     if (name === null) return;
 
-    const result = Shore.add(Object.assign({}, shape, { name: name || shape.name }));
+    const result = await Shore.add(Object.assign({}, shape, { name: name || shape.name }));
     if (!result.ok) {
       UIModule.showToast(result.message, 'error');
       return;
@@ -787,7 +790,7 @@ const Admin = (function() {
     );
     if (!ok) return;
 
-    Shore.remove(id);
+    await Shore.remove(id);
     UIModule.showToast('Shape deleted', 'success');
     renderShoreList();
     renderShoreShapes();
@@ -859,6 +862,77 @@ const Admin = (function() {
 
   // ------------------------------------------------------------- devices
 
+  async function addDevice() {
+    const id = await UIModule.prompt(
+      'Buoy id — the code printed on the housing',
+      'NS-' + String(Date.now()).slice(-6),
+      { title: 'Register a buoy', confirmLabel: 'Next' }
+    );
+    if (id === null) return;
+
+    if (!/^[A-Za-z0-9-]{3,24}$/.test(id)) {
+      UIModule.showToast('Use 3–24 letters, numbers or dashes', 'error');
+      return;
+    }
+
+    if (Devices.get(id)) {
+      UIModule.showToast('That id is already registered', 'error');
+      return;
+    }
+
+    const label = await UIModule.prompt(
+      'What is it, and where?',
+      'Net — Daugava',
+      { title: 'Describe the buoy', confirmLabel: 'Save' }
+    );
+    if (label === null) return;
+
+    const result = await Devices.add({
+      id,
+      label: label || id,
+      gearType: 'net',
+      lat: CONFIG.MAP_CENTER[0],
+      lon: CONFIG.MAP_CENTER[1],
+      battery: 100,
+      temperature_c: null,
+      water_level_cm: null,
+      tilt: { lifted: false, degrees: 0 },
+      light_on: false,
+      signal: null
+    });
+
+    if (!result.ok) {
+      UIModule.showToast(result.message, 'error');
+      return;
+    }
+
+    UIModule.showToast('Buoy registered', 'success');
+    renderDevices();
+  }
+
+  async function seedDevices() {
+    const ok = await UIModule.confirm(
+      'Load the demo fleet? This adds seven example buoys with made-up readings.',
+      { title: 'Load demo fleet', confirmLabel: 'Load' }
+    );
+    if (!ok) return;
+
+    UIModule.showLoading('Adding buoys…');
+    try {
+      const fleet = Devices.demoFleet ? Devices.demoFleet() : [];
+      let added = 0;
+
+      for (const d of fleet) {
+        const result = await Devices.add(d);
+        if (result.ok) added++;
+      }
+
+      renderDevices();
+      UIModule.showToast(`Added ${added} buoys`, 'success');
+    } finally {
+      UIModule.hideLoading();
+    }
+  }
   function renderDevices() {
     const list = Devices.all();
     const summary = Devices.summary();
@@ -961,7 +1035,7 @@ const Admin = (function() {
     );
     if (!ok) return;
 
-    if (Devices.remove(id)) {
+    if (await Devices.remove(id)) {
       UIModule.showToast('Buoy removed', 'success');
       renderDevices();
     } else {
@@ -989,6 +1063,9 @@ const Admin = (function() {
   }
 
   function bindDevices() {
+    document.getElementById('btn-add-device')?.addEventListener('click', addDevice);
+    document.getElementById('btn-seed-devices')?.addEventListener('click', seedDevices);
+
     renderDevices();
     // Telemetry ages while the panel is open, so refresh the "x min ago" text.
     setInterval(() => {
@@ -1000,13 +1077,13 @@ const Admin = (function() {
 
   // ---------------------------------------------------------------- users
 
-  function renderUsers() {
+  async function renderUsers() {
     const host = document.getElementById('users-list');
     const empty = document.getElementById('users-empty');
     const count = document.getElementById('user-count');
     if (!host) return;
 
-    const users = Auth.listUsers();
+    const users = await Auth.listUsers();
     const me = Auth.current();
 
     if (count) count.textContent = users.length + (users.length === 1 ? ' account' : ' accounts');
@@ -1063,8 +1140,8 @@ const Admin = (function() {
     }).join('');
 
     host.querySelectorAll('[data-role-select]').forEach(sel => {
-      sel.addEventListener('change', () => {
-        const result = Auth.setRole(sel.dataset.roleSelect, sel.value);
+      sel.addEventListener('change', async () => {
+        const result = await Auth.setRole(sel.dataset.roleSelect, sel.value);
 
         if (!result.ok) {
           UIModule.showToast(result.message, 'error');
@@ -1092,7 +1169,7 @@ const Admin = (function() {
     );
     if (!ok) return;
 
-    const result = Auth.deleteUser(username);
+    const result = await Auth.deleteUser(username);
 
     if (!result.ok) {
       UIModule.showToast(result.message, 'error');
@@ -1144,10 +1221,10 @@ const Admin = (function() {
 
   // ------------------------------------------------------------------ init
 
-  function init() {
-    const session = Auth.require(['admin']);
+  async function init() {
+    const session = await Auth.require(['admin']);
     if (!session) return;
-    boot(session);
+    await boot(session);
   }
 
   return { init, reload: boot };
@@ -1155,6 +1232,13 @@ const Admin = (function() {
 
 document.addEventListener('DOMContentLoaded', () => Admin.init());
 window.Admin = Admin;
+
+
+
+
+
+
+
 
 
 

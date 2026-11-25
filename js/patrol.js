@@ -15,7 +15,7 @@ const Patrol = (function() {
   // ------------------------------------------------------------------ init
 
   async function init() {
-    const session = Auth.require(['patrol', 'admin']);
+    const session = await Auth.require(['patrol', 'admin']);
     if (!session) return;
 
     Theme.init();
@@ -33,6 +33,8 @@ const Patrol = (function() {
     bindTableControls();
 
     await RegistryModule.loadRegistry();
+    await Shore.load();
+    await Devices.load();
 
     const map = MapModule.initMap('patrol-map', CONFIG.MAP_CENTER, CONFIG.MAP_ZOOM);
     if (!map) UIModule.showToast('Map failed to load', 'error');
@@ -245,6 +247,9 @@ const Patrol = (function() {
 
 document.addEventListener('DOMContentLoaded', () => Patrol.init());
 window.Patrol = Patrol;
+
+
+
 
 
 

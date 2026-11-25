@@ -96,8 +96,14 @@ const StoreModule = (function() {
       return { ...sighting, id: sighting.id || crypto.randomUUID() };
     }
 
-    // span is client-side only until the column exists; Supabase would reject it.
-    const { span, ...row } = sighting;
+    // Stamp the reporter. The database policy requires auth.uid() = reported_by,
+    // so a sighting can only ever be filed as the person filing it.
+    const me = (typeof Auth !== 'undefined' && Auth.current()) || null;
+
+    const row = Object.assign({}, sighting, {
+      reported_by: me ? me.id : null,
+      reporter_name: me ? me.username : null
+    });
 
     const { data, error } = await client
       .from('sightings')
@@ -481,5 +487,6 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.StoreModule = StoreModule;
 }
+
 
 

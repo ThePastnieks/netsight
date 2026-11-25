@@ -2,10 +2,28 @@
 
 // Build stamp — bump this on every release. It is used to bust browser caches
 // (asset query strings) and to purge stale service workers.
-const NETSIGHT_BUILD = '2026.11.26.4';
+const NETSIGHT_BUILD = '2026.11.27.2';
 
 const CONFIG = {
   BUILD: NETSIGHT_BUILD,
+
+  // ---------------------------------------------------------------- supabase
+  // Paste the two values from Supabase → Project Settings → API.
+  //
+  // The anon key is public by design — it ships to the browser either way.
+  // What protects the data is row level security in the database, not secrecy
+  // of this key. Never put the service_role key here.
+  //
+  // Leave both empty and the app runs in local mode: everything works, but
+  // nothing leaves this browser. The sign-in screen says so.
+  SUPABASE_URL: '',
+  SUPABASE_ANON_KEY: '',
+
+  // Accounts sign in with a username. Supabase Auth wants an email, so a
+  // username is expanded to this domain internally. Change it before the first
+  // signup if you prefer something else; after that it must stay the same or
+  // existing accounts can no longer sign in.
+  AUTH_EMAIL_DOMAIN: 'netsight.local',
 
   // ------------------------------------------------------------------ detect
   // One endpoint, one job: send a photo, say whether there is a fishing net
@@ -26,7 +44,9 @@ const CONFIG = {
   //
   // Only `fishing_net` and `confidence` are required. See DETECT.md.
   DETECT: {
-    endpoint: '/.netlify/functions/detect',
+    // Vercel serves api/. Netlify serves netlify/functions/ — if you deploy
+    // there, change this to '/.netlify/functions/detect'.
+    endpoint: '/api/detect',
     minConfidence: 0.5,     // below this the user must confirm the type
     timeoutMs: 30000,
     enabled: true
@@ -117,6 +137,9 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.CONFIG = CONFIG;
 }
+
+
+
 
 
 

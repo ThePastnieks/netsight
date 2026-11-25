@@ -15,7 +15,7 @@ const App = (function() {
 
   async function init() {
     // Every page sits behind the same login. This one is the boater's home.
-    const session = Auth.require(['user', 'patrol', 'admin']);
+    const session = await Auth.require(['user', 'patrol', 'admin']);
     if (!session) return;
 
     Theme.init();
@@ -31,6 +31,8 @@ const App = (function() {
     syncDetectChrome();
 
     await RegistryModule.loadRegistry();
+    await Shore.load();
+    await Devices.load();
 
     const map = MapModule.initMap('map', CONFIG.MAP_CENTER, CONFIG.MAP_ZOOM);
     if (!map) UIModule.showToast('Map failed to load', 'error');
@@ -585,6 +587,9 @@ const App = (function() {
 
 document.addEventListener('DOMContentLoaded', () => App.init());
 window.App = App;
+
+
+
 
 
 

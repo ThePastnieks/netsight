@@ -91,29 +91,82 @@ const Devices = (function() {
     ];
   }
 
-  function read() {
-    if (cache) return cache;
+  // ---------------------------------------------------------------- storage
+  //
+  // Cloud mode: the fleet lives in the `devices` table, so a buoy registered by
+  // an admin is visible to patrol and users on every device. Local mode:
+  // localStorage, seeded with a demo fleet so the screens are not empty.
+  //
+  // all() stays synchronous because the map draws from it. load() fills the
+  // cache; the pages await it once at boot.
 
+  let loaded = null;
+
+  // Uses Auth's client, not a new one: a second client would have no session and
+  // row level security would silently return nothing.
+  function db() {
+    if (typeof Auth === 'undefined' || !Auth.isCloud()) return null;
+    return Auth.client();
+  }
+
+  function rowToDevice(row) {
+    return {
+      id: row.id,
+      nfc: row.nfc,
+      label: row.label,
+      gearType: row.gear_type,
+      owner: row.owner,
+      lat: row.lat,
+      lon: row.lon,
+      span: row.span || undefined,
+      battery: row.battery,
+      temperature_c: row.temperature_c,
+      water_level_cm: row.water_level_cm,
+      tilt: row.tilt || { lifted: false, degrees: 0 },
+      light_on: row.light_on,
+      signal: row.signal,
+      lastSeen: row.last_seen,
+      registeredAt: row.registered_at
+    };
+  }
+
+  function deviceToRow(d) {
+    return {
+      id: d.id,
+      nfc: d.nfc ?? null,
+      label: d.label,
+      gear_type: d.gearType ?? null,
+      owner: d.owner ?? null,
+      lat: d.lat ?? null,
+      lon: d.lon ?? null,
+      span: d.span ?? null,
+      battery: d.battery ?? null,
+      temperature_c: d.temperature_c ?? null,
+      water_level_cm: d.water_level_cm ?? null,
+      tilt: d.tilt ?? null,
+      light_on: d.light_on ?? null,
+      signal: d.signal ?? null,
+      last_seen: d.lastSeen ?? null
+    };
+  }
+
+  function readLocal() {
     try {
       const raw = localStorage.getItem(STORE_KEY);
       if (raw) {
         const parsed = JSON.parse(raw);
-        if (Array.isArray(parsed) && parsed.length) {
-          cache = parsed;
-          return cache;
-        }
+        if (Array.isArray(parsed) && parsed.length) return parsed;
       }
     } catch (err) {
       console.warn('Could not read devices:', err);
     }
 
-    cache = seed();
-    write(cache);
-    return cache;
+    const fresh = seed();
+    writeLocal(fresh);
+    return fresh;
   }
 
-  function write(list) {
-    cache = list;
+  function writeLocal(list) {
     try {
       localStorage.setItem(STORE_KEY, JSON.stringify(list));
     } catch (err) {
@@ -121,39 +174,144 @@ const Devices = (function() {
     }
   }
 
+  function load() {
+    if (loaded) return loaded;
+
+    loaded = (async () => {
+      const client = db();
+
+      if (!client) {
+        cache = readLocal();
+        return cache;
+      }
+
+      const { data, error } = await client
+        .from('devices')
+        .select('*')
+        .order('id', { ascending: true });
+
+      if (error) {
+        console.warn('Could not load devices:', error.message);
+        cache = [];
+        return cache;
+      }
+
+      cache = (data || []).map(rowToDevice);
+      return cache;
+    })();
+
+    return loaded;
+  }
+
+  function reload() {
+    loaded = null;
+    cache = null;
+    return load();
+  }
+
   function all() {
-    return read().map(d => Object.assign({}, d));
+    return (cache || []).map(d => Object.assign({}, d));
   }
 
   function get(id) {
-    return read().find(d => d.id === id) || null;
+    return (cache || []).find(d => d.id === id) || null;
   }
 
-  function update(id, patch) {
-    const list = read();
-    const idx = list.findIndex(d => d.id === id);
-    if (idx === -1) return null;
+  async function update(id, patch) {
+    const existing = get(id);
+    if (!existing) return null;
 
-    list[idx] = Object.assign({}, list[idx], patch, {
+    const merged = Object.assign({}, existing, patch, {
       lastSeen: patch.lastSeen || new Date().toISOString()
     });
-    write(list);
-    return list[idx];
+
+    const client = db();
+
+    if (!client) {
+      cache = cache.map(d => d.id === id ? merged : d);
+      writeLocal(cache);
+      return merged;
+    }
+
+    const { error } = await client
+      .from('devices')
+      .update(deviceToRow(merged))
+      .eq('id', id);
+
+    if (error) {
+      console.warn('Could not update device:', error.message);
+      return null;
+    }
+
+    cache = cache.map(d => d.id === id ? merged : d);
+    return merged;
   }
 
-  function remove(id) {
-    const list = read();
-    const next = list.filter(d => d.id !== id);
-    if (next.length === list.length) return false;
-    write(next);
+  async function add(device) {
+    const clean = Object.assign({}, device);
+    if (!clean.id || !clean.label) return { ok: false, message: 'A buoy needs an id and a label' };
+
+    clean.lastSeen = clean.lastSeen || new Date().toISOString();
+    clean.registeredAt = clean.registeredAt || new Date().toISOString();
+
+    const client = db();
+
+    if (!client) {
+      if (get(clean.id)) return { ok: false, message: 'That buoy id is already in use' };
+      cache = (cache || []).concat([clean]);
+      writeLocal(cache);
+      return { ok: true, device: clean };
+    }
+
+    const { error } = await client.from('devices').insert(deviceToRow(clean));
+    if (error) return { ok: false, message: error.message };
+
+    cache = (cache || []).concat([clean]);
+    return { ok: true, device: clean };
+  }
+
+  async function remove(id) {
+    const client = db();
+
+    if (!client) {
+      const before = (cache || []).length;
+      cache = (cache || []).filter(d => d.id !== id);
+      if (cache.length === before) return false;
+      writeLocal(cache);
+      return true;
+    }
+
+    const { error } = await client.from('devices').delete().eq('id', id);
+    if (error) {
+      console.warn('Could not delete device:', error.message);
+      return false;
+    }
+
+    cache = (cache || []).filter(d => d.id !== id);
     return true;
   }
 
-  function reset() {
-    write(seed());
-    return all();
-  }
+  async function reset() {
+    const client = db();
 
+    if (!client) {
+      cache = seed();
+      writeLocal(cache);
+      return all();
+    }
+
+    const { error } = await client
+      .from('devices')
+      .delete()
+      .neq('id', '---never---');
+
+    if (error) console.warn('Could not clear devices:', error.message);
+
+    const { error: insertError } = await client.from('devices').insert(seed().map(deviceToRow));
+    if (insertError) console.warn('Could not seed devices:', insertError.message);
+
+    return reload();
+  }
   // ---------------------------------------------------------------- alerts
 
   // Turns one device's telemetry into the list of things a human should see.
@@ -280,7 +438,7 @@ const Devices = (function() {
   // ------------------------------------------------------------- telemetry
 
   // Applies an incoming device report. This is the shape a real device posts.
-  function applyTelemetry(report) {
+  async function applyTelemetry(report) {
     if (!report || !report.device_id) return { ok: false, message: 'Missing device_id' };
 
     const existing = get(report.device_id);
@@ -299,11 +457,16 @@ const Devices = (function() {
 
     if (!existing) return { ok: false, message: 'Unknown device ' + report.device_id };
 
-    const updated = update(report.device_id, patch);
+    const updated = await update(report.device_id, patch);
+    if (!updated) return { ok: false, message: 'Could not store that report' };
     return { ok: true, device: updated, alerts: evaluate(updated) };
   }
 
   return {
+    demoFleet: seed,
+    load,
+    reload,
+    add,
     all,
     get,
     update,
@@ -324,6 +487,11 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.Devices = Devices;
 }
+
+
+
+
+
 
 
 
