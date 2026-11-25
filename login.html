@@ -11,7 +11,7 @@
 
   <script>
   (function () {
-    var BUILD = '2026.11.27.6';
+    var BUILD = '2026.11.27.8';
     var KEY = 'netsight_build';
     var seen = null;
     try { seen = localStorage.getItem(KEY); } catch (e) {}
@@ -43,10 +43,10 @@
 
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/netsight-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css?v=2026.11.27.6">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.27.8">
 
-  <script src="js/config.js?v=2026.11.27.6"></script>
-  <script src="js/theme.js?v=2026.11.27.6"></script>
+  <script src="js/config.js?v=2026.11.27.8"></script>
+  <script src="js/theme.js?v=2026.11.27.8"></script>
 </head>
 <body data-page="login">
 
@@ -146,7 +146,7 @@
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
 
 
-  <script src="js/auth.js?v=2026.11.27.6"></script>
+  <script src="js/auth.js?v=2026.11.27.8"></script>
   <script>
   (function () {
     'use strict';
@@ -267,12 +267,22 @@
         // a locked door.
         const users = await Auth.listUsers();
 
+        // Read the reason after the query, not before: a refused read is only
+        // discovered by trying, and it must not be reported as "Connected".
+        const bootError = Auth.lastError();
+
         if (modeNote) {
           modeNote.hidden = false;
-          modeNote.dataset.mode = 'cloud';
-          modeNote.innerHTML = users.length === 0
-            ? 'Connected. No accounts yet — the first one you create becomes the <b>administrator</b>.'
-            : 'Connected. Sign in, or create an account — an administrator can promote you to Water Patrol.';
+
+          if (bootError) {
+            modeNote.dataset.mode = 'error';
+            modeNote.innerHTML = bootError;
+          } else {
+            modeNote.dataset.mode = 'cloud';
+            modeNote.innerHTML = users.length === 0
+              ? 'Connected. No accounts yet — the first one you create becomes the <b>administrator</b>.'
+              : 'Connected. Sign in, or create an account — an administrator can promote you to Water Patrol.';
+          }
         }
       } else {
         // Local mode: nothing leaves this browser, and that has consequences
@@ -302,6 +312,8 @@
   </script>
 </body>
 </html>
+
+
 
 
 

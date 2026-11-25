@@ -2419,9 +2419,17 @@
     color: var(--ok);
   }
 
+.mode-note[data-mode='error'] {
+    border-color: color-mix(in oklab, var(--danger) 55%, transparent);
+    background: color-mix(in oklab, var(--danger) 12%, transparent);
+    color: var(--text);
+    text-align: left;
+  }
+
   .mode-note[data-mode='local'] {
     border-color: color-mix(in oklab, var(--warn) 45%, transparent);
     background: var(--warn-soft);
     color: var(--text);
   }
 }
+

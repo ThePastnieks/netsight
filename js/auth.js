@@ -31,6 +31,7 @@ const Auth = (function() {
   let client = null;
   let session = null;          // cached so current() can stay synchronous
   let ready = null;            // the promise returned by init()
+  let lastError = null;        // why the last cloud session attempt failed
 
   // ---------------------------------------------------------------- helpers
 
@@ -99,9 +100,12 @@ const Auth = (function() {
   // Reads the profile row for a user id. Returns null when the account has no
   // profile — which is how a deleted account behaves: the auth user may still
   // exist, but without a profile there is no role and therefore no entry.
+  // Returns { profile } or { error }. The error is not swallowed: "profile
+  // missing" and "permission denied" look identical to the user, and the second
+  // one is a setup problem with a specific fix.
   async function cloudProfile(userId) {
     const db = cloudClient();
-    if (!db) return null;
+    if (!db) return { error: 'Cloud mode is not available' };
 
     const { data, error } = await db
       .from('profiles')
@@ -109,26 +113,49 @@ const Auth = (function() {
       .eq('id', userId)
       .maybeSingle();
 
-    if (error) {
-      console.warn('Could not read profile:', error.message);
-      return null;
-    }
+    if (error) return { error: error.message, code: error.code };
 
-    return data;
+    return { profile: data };
   }
 
+  // Turns a Supabase session into the app's session, or explains why it cannot.
   async function cloudSessionFrom(supabaseSession) {
-    if (!supabaseSession || !supabaseSession.user) return null;
+    if (!supabaseSession || !supabaseSession.user) {
+      return { error: 'No session' };
+    }
 
-    const profile = await cloudProfile(supabaseSession.user.id);
-    if (!profile) return null;
+    const { profile, error, code } = await cloudProfile(supabaseSession.user.id);
+
+    if (error) {
+      // Distinguish "the database refused to answer" from "there is no row".
+      // They look the same to the user and need opposite fixes.
+      if (code === '42501' || /permission denied/i.test(error)) {
+        return {
+          error: 'The database refused to read profiles. Run the grant statements ' +
+                 'at the end of supabase/migrations/003_full_schema.sql.',
+          fatal: true
+        };
+      }
+      return { error: 'Could not read your profile: ' + error, fatal: true };
+    }
+
+    if (!profile) {
+      return {
+        error: 'That account has no profile row. The signup trigger did not run — ' +
+               're-run supabase/migrations/003_full_schema.sql and check ' +
+               'Database → Triggers for on_auth_user_created.',
+        fatal: true
+      };
+    }
 
     return {
-      id: profile.id,
-      username: profile.username,
-      displayName: profile.username,
-      role: profile.role,
-      at: Date.now()
+      session: {
+        id: profile.id,
+        username: profile.username,
+        displayName: profile.username,
+        role: profile.role,
+        at: Date.now()
+      }
     };
   }
 
@@ -161,14 +188,14 @@ const Auth = (function() {
       };
     }
 
-    const next = await cloudSessionFrom(data.session);
-    if (!next) {
-      return { ok: false, message: 'Account created, but its profile is missing. ' +
-                                   'Run supabase/migrations/003_full_schema.sql.' };
+    const resolved = await cloudSessionFrom(data.session);
+
+    if (!resolved.session) {
+      return { ok: false, message: resolved.error };
     }
 
-    session = next;
-    return { ok: true, session: next };
+    session = resolved.session;
+    return { ok: true, session: resolved.session };
   }
 
   async function cloudLogin(username, password) {
@@ -186,14 +213,15 @@ const Auth = (function() {
       return { ok: false, message: 'Wrong username or password' };
     }
 
-    const next = await cloudSessionFrom(data.session);
-    if (!next) {
+    const resolved = await cloudSessionFrom(data.session);
+
+    if (!resolved.session) {
       await db.auth.signOut();
-      return { ok: false, message: 'That account has no profile and cannot sign in' };
+      return { ok: false, message: resolved.error };
     }
 
-    session = next;
-    return { ok: true, session: next };
+    session = resolved.session;
+    return { ok: true, session: resolved.session };
   }
 
   async function cloudChangePassword(currentPassword, nextPassword, confirm) {
@@ -235,7 +263,14 @@ const Auth = (function() {
       .order('username', { ascending: true });
 
     if (error) {
+      // An empty list and a refused list mean opposite things: one is a fresh
+      // install, the other is a broken one. Record which, so the sign-in screen
+      // can tell them apart instead of cheerfully saying "Connected".
       console.warn('Could not list users:', error.message);
+      if (error.code === '42501' || /permission denied/i.test(error.message)) {
+        lastError = 'The database refused to read profiles. Run the grant statements ' +
+                    'at the end of supabase/migrations/003_full_schema.sql.';
+      }
       return [];
     }
 
@@ -572,6 +607,10 @@ const Auth = (function() {
 
     ready = (async () => {
       if (!isCloud()) {
+        // Local mode cannot have a cloud failure. Clearing it stops a stale
+        // message from a previous configuration being shown as if it were
+        // current.
+        lastError = null;
         await seedLocal();
         session = readLocalSession();
         return session;
@@ -583,13 +622,26 @@ const Auth = (function() {
       const { data, error } = await db.auth.getSession();
       if (error || !data.session) { session = null; return null; }
 
-      session = await cloudSessionFrom(data.session);
+      const resolved = await cloudSessionFrom(data.session);
+
+      // A stored session whose profile cannot be read is a setup problem, not a
+      // sign-out. Keep the reason so the sign-in screen can show it instead of
+      // silently pretending nobody is signed in.
+      if (!resolved.session) {
+        lastError = resolved.error;
+        session = null;
+        return null;
+      }
+
+      session = resolved.session;
 
       // Keep the cache in step when Supabase refreshes or ends the session.
       db.auth.onAuthStateChange(async (event, s) => {
         if (event === 'SIGNED_OUT' || !s) { session = null; return; }
         if (event === 'TOKEN_REFRESHED' || event === 'SIGNED_IN') {
-          session = await cloudSessionFrom(s);
+          const next = await cloudSessionFrom(s);
+          session = next.session || null;
+          if (!next.session) lastError = next.error;
         }
       });
 
@@ -723,6 +775,8 @@ const Auth = (function() {
     login,
     logout,
     current,
+    lastError: () => lastError,
+    clearError: () => { lastError = null; },
     require,
     mount,
     loginUrl,
@@ -744,3 +798,10 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.Auth = Auth;
 }
+
+
+
+
+
+
+
