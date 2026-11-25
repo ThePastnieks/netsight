@@ -1,4 +1,4 @@
-// NetSight Auth — username + password accounts
+﻿// NetSight Auth — username + password accounts
 //
 // There is no server. Accounts live in this browser's localStorage with a
 // salted PBKDF2 hash per user. The account decides the role, and the role
@@ -246,7 +246,7 @@ const Auth = (function() {
 
   function logout() {
     clearSession();
-    location.replace('login.html');
+    location.replace(loginUrl());
   }
 
   // Page guard: no session -> login, wrong role -> that role's own page.
@@ -254,7 +254,7 @@ const Auth = (function() {
     const session = readSession();
 
     if (!session) {
-      location.replace('login.html');
+      location.replace(loginUrl());
       return null;
     }
 
@@ -267,6 +267,13 @@ const Auth = (function() {
   }
 
   // ------------------------------------------------------------------ roles
+
+  // Login URL carries the build stamp so a stale service worker or HTTP cache
+  // cannot answer with an older copy of the page.
+  function loginUrl() {
+    var build = (window.CONFIG && CONFIG.BUILD) || '';
+    return build ? 'login.html?v=' + encodeURIComponent(build) : 'login.html';
+  }
 
   function pageFor(roleId) {
     const r = ROLES[roleId];
@@ -413,6 +420,7 @@ const Auth = (function() {
     mount,
     clearSession,
     pageFor,
+    loginUrl,
     roleInfo,
     roleLabel,
     allRoles,
@@ -430,3 +438,4 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.Auth = Auth;
 }
+

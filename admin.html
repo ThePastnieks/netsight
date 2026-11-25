@@ -11,33 +11,43 @@
 
   <script>
   (function () {
-    var BUILD = '2026.11.25.1';
+    var BUILD = '2026.11.25.2';
     var KEY = 'netsight_build';
     var seen = null;
     try { seen = localStorage.getItem(KEY); } catch (e) {}
-    if (seen === BUILD) return;
+
+    var stale = seen !== BUILD;
     try { localStorage.setItem(KEY, BUILD); } catch (e) {}
+
     var tasks = [];
+
+    // Service workers are gone — unregister any left behind by an older build.
     if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
       tasks.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
         return Promise.all(regs.map(function (r) { return r.unregister(); }));
-      }).catch(function () {}));
+      }).then(function (r) { return r.length; }).catch(function () { return 0; }));
     }
+
     if (window.caches && caches.keys) {
       tasks.push(caches.keys().then(function (keys) {
         return Promise.all(keys.map(function (k) { return caches.delete(k); }));
-      }).catch(function () {}));
+      }).then(function () { return 0; }).catch(function () { return 0; }));
     }
-    if (seen) { Promise.all(tasks).then(function () { location.reload(); }); }
+
+    Promise.all(tasks).then(function (counts) {
+      var removed = counts.some(function (n) { return n > 0; });
+      if (stale || removed) location.reload();
+    });
   })();
   </script>
 
+
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/netsight-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="css/style.css?v=2026.11.25.1">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.25.2">
 
-  <script src="js/config.js?v=2026.11.25.1"></script>
-  <script src="js/theme.js?v=2026.11.25.1"></script>
+  <script src="js/config.js?v=2026.11.25.2"></script>
+  <script src="js/theme.js?v=2026.11.25.2"></script>
 </head>
 <body data-page="admin">
 
@@ -309,14 +319,16 @@
     </div>
   </div>
 
-  <script src="js/status.js?v=2026.11.25.1"></script>
-  <script src="js/store.js?v=2026.11.25.1"></script>
-  <script src="js/ui.js?v=2026.11.25.1"></script>
-  <script src="js/detection.js?v=2026.11.25.1"></script>
-  <script src="js/auth.js?v=2026.11.25.1"></script>
-  <script src="js/admin.js?v=2026.11.25.1"></script>
+  <script src="js/status.js?v=2026.11.25.2"></script>
+  <script src="js/store.js?v=2026.11.25.2"></script>
+  <script src="js/ui.js?v=2026.11.25.2"></script>
+  <script src="js/detection.js?v=2026.11.25.2"></script>
+  <script src="js/auth.js?v=2026.11.25.2"></script>
+  <script src="js/admin.js?v=2026.11.25.2"></script>
 </body>
 </html>
+
+
 
 
 

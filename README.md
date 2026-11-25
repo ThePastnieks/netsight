@@ -75,7 +75,9 @@ salt per account) and kept in this browser's `localStorage` under
 
 > The build number lives in `js/config.js → NETSIGHT_BUILD`. Bump it on every
 > release — the HTML pages append `?v=<build>` to every local asset and purge
-> stale service workers, so the browser always loads the new files.
+> stale service workers, so the browser always loads the new files. There is no
+> service worker any more — an old one from a previous build is unregistered
+> automatically, and `reset.html` clears everything in one click.
 
 ---
 
@@ -96,7 +98,7 @@ salt per account) and kept in this browser's `localStorage` under
 * **Admin panel** — points (delete one, bulk, export, wipe), model endpoint, and
   **Users**: who is a User, who is Water Patrol, who is an Administrator.
 * **Modern shell** — light/dark/system theme, glass app bar, bottom tab bar,
-  bottom sheets, toasts, PWA install + offline.
+  bottom sheets, toasts.
 
 ---
 
@@ -175,10 +177,9 @@ login.html                 Sign in / create account — the first screen
 index.html                 User app (map, report, settings)
 patrol.html                Water Patrol (map, cases, settings)
 admin.html                 Admin panel (points, detection, security)
-reset.html                 One-click cache + service worker purge
+reset.html                 One-click cache purge (also removes old service workers)
 DETECT.md                  The model contract — read this to build the AI
-manifest.webmanifest       PWA metadata
-sw.js                      Offline app-shell service worker
+manifest.webmanifest       PWA metadata (install prompt, no service worker)
 css/style.css              Design system (tokens → base → components)
 js/
   config.js                Build stamp, detection endpoint, map, thresholds
@@ -230,6 +231,7 @@ FileReader, fetch, `color-mix()` (graceful fallback), CSS Grid.
 ## License
 
 MIT — prototype for demonstration purposes.
+
 
 
 

@@ -62,7 +62,7 @@
     </ul>
 
     <button type="button" id="run">Notīrīt un ielādēt jauno versiju</button>
-    <a class="btn" href="index.html">Atvērt lietotni</a>
+    <a class="btn" id="go" href="login.html">Atvērt lietotni</a>
 
     <div class="done" id="done" hidden>
       Gatavs. Ja lapa joprojām izskatās veca, spied <code>Ctrl + Shift + R</code>.
@@ -116,6 +116,11 @@
       try { sessionStorage.clear(); mark(d4, 'ok'); }
       catch (e) { mark(d4, 'err'); }
 
+      // Point the button at a cache-busted URL so the next page cannot come
+      // from a stale HTTP cache entry.
+      var go = document.getElementById('go');
+      if (go) go.href = 'login.html?fresh=' + Date.now();
+
       done.hidden = false;
       run.disabled = false;
       run.textContent = 'Notīrīt vēlreiz';
@@ -130,4 +135,5 @@
   </script>
 </body>
 </html>
+
 

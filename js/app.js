@@ -39,7 +39,6 @@ const App = (function() {
     if (UIModule.getCurrentScreen() === 'map') startLocationTracking();
 
     unsubRealtime = StoreModule.subscribeToSightings(() => loadSightings());
-    registerServiceWorker();
 
     console.log('NetSight ready');
   }
@@ -408,14 +407,6 @@ const App = (function() {
 
     document.body.dataset.ai = configured ? 'ready' : 'off';
   }
-  function registerServiceWorker() {
-    if (!('serviceWorker' in navigator)) return;
-    if (location.protocol !== 'http:' && location.protocol !== 'https:') return;
-    navigator.serviceWorker.register('sw.js').catch(err => {
-      console.warn('Service worker not registered:', err.message);
-    });
-  }
-
   // ----------------------------------------------------------------- cleanup
 
   window.addEventListener('beforeunload', () => {
@@ -435,6 +426,7 @@ const App = (function() {
 
 document.addEventListener('DOMContentLoaded', () => App.init());
 window.App = App;
+
 
 
 
