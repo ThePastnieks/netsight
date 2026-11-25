@@ -2,7 +2,7 @@
 
 // Build stamp — bump this on every release. It is used to bust browser caches
 // (asset query strings) and to purge stale service workers.
-const NETSIGHT_BUILD = '2026.11.27.4';
+const NETSIGHT_BUILD = '2026.11.27.6';
 
 const CONFIG = {
   BUILD: NETSIGHT_BUILD,
@@ -17,13 +17,19 @@ const CONFIG = {
   // Leave both empty and the app runs in local mode: everything works, but
   // nothing leaves this browser. The sign-in screen says so.
   SUPABASE_URL: 'https://noncjqgdevddkxrvurop.supabase.co',
-  SUPABASE_ANON_KEY: '',
+  SUPABASE_ANON_KEY: 'sb_publishable_AkDlQCwWCCqAHJFGn4AN7A_y5somorJ',
 
   // Accounts sign in with a username. Supabase Auth wants an email, so a
-  // username is expanded to this domain internally. Change it before the first
-  // signup if you prefer something else; after that it must stay the same or
-  // existing accounts can no longer sign in.
-  AUTH_EMAIL_DOMAIN: 'netsight.local',
+  // username is expanded to this domain internally:
+  //   kalas  ->  kalas@netsight.lv
+  //
+  // The domain must be one Supabase considers real. It rejects reserved names
+  // outright — netsight.local gives "email_address_invalid" — so a normal TLD is
+  // used instead. Nothing is ever sent to it, because email confirmation is off.
+  //
+  // Change it before the first signup if you prefer. After that it must stay
+  // the same, or existing accounts can no longer sign in.
+  AUTH_EMAIL_DOMAIN: 'netsight.lv',
 
   // ------------------------------------------------------------------ detect
   // One endpoint, one job: send a photo, say whether there is a fishing net
@@ -137,6 +143,11 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.CONFIG = CONFIG;
 }
+
+
+
+
+
 
 
 

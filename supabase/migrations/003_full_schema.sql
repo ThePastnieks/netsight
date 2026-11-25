@@ -1,4 +1,4 @@
--- NetSight — the whole database, in one script.
+﻿-- NetSight — the whole database, in one script.
 --
 -- Run this once in Supabase → SQL Editor → New query → Run.
 -- Safe to run again: every statement checks before it creates.
@@ -314,6 +314,32 @@ begin
   end;
 end $$;
 
+
+-- ================================================================= grants
+--
+-- Row level security decides which ROWS a role may touch. Postgres separately
+-- decides whether the role may touch the TABLE at all. Tables created here get
+-- no table privileges automatically, so without this every request fails with
+--   401 {"code":"42501","message":"permission denied for table profiles"}
+-- even though the policies are correct.
+--
+-- Both must pass. The grants are broad on purpose; the policies are what
+-- restrict, and every policy below requires auth.uid() or
+-- auth.role() = 'authenticated'.
+
+grant usage on schema public to anon, authenticated;
+
+grant select, insert, update, delete on all tables in schema public to authenticated;
+grant select on all tables in schema public to anon;
+grant usage, select on all sequences in schema public to authenticated;
+
+alter default privileges in schema public
+  grant select, insert, update, delete on tables to authenticated;
+alter default privileges in schema public
+  grant select on tables to anon;
+alter default privileges in schema public
+  grant usage, select on sequences to authenticated;
 -- ============================================================ done
 -- Check it worked: Table Editor should list profiles, sightings, shore_shapes
 -- and devices.
+

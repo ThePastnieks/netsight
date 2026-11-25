@@ -1,4 +1,4 @@
-﻿# NetSight — database setup
+# NetSight — database setup
 
 The app runs in two modes. This document is the one-time setup that switches it
 from **local** (everything stays in one browser) to **cloud** (accounts, shore
@@ -36,6 +36,17 @@ history, and running it first is what produces
 When it finishes, **Table Editor** should list four tables: `profiles`,
 `sightings`, `shore_shapes`, `devices`.
 
+The script ends with `grant` statements. Those are not optional: row level
+security decides which **rows** a role may touch, but Postgres separately decides
+whether the role may touch the **table**. Without the grants every request fails
+with
+
+```
+401 {"code":"42501","message":"permission denied for table profiles"}
+```
+
+even though the policies are correct. Both checks must pass.
+
 > The project home page will still say *Last migration: No migrations*. That
 > counter only tracks the Supabase CLI, not the SQL editor. Ignore it.
 
@@ -47,7 +58,13 @@ from.
 **Authentication → Providers → Email** → turn **Confirm email** off → **Save**.
 
 Without this, every signup stops at "Account created, but Supabase still wants an
-email confirmation".
+email confirmation", and you cannot even reach a session to test with.
+
+The app also signs up with `username@netsight.lv`. That domain is never used to
+send anything — it only satisfies the shape Supabase expects. It must be a
+plausible domain: `.local` is rejected outright with
+`email_address_invalid`. If you change `CONFIG.AUTH_EMAIL_DOMAIN`, change it
+**before** the first signup, because existing accounts are keyed to it.
 
 ## 4. Copy the two keys
 
@@ -148,6 +165,24 @@ Row level security enforces this on the server, not just in the interface.
 You are running an old copy of `003_full_schema.sql`. The current one creates
 `sightings` itself. Pull the latest and paste it again — no need to run `001`.
 
+**`401 {"code":"42501","message":"permission denied for table …"}`**
+The grants at the end of `003` did not run, or ran before the tables existed.
+Re-run the whole file; it is idempotent. Verify with:
+
+```sql
+select grantee, table_name, privilege_type
+from information_schema.role_table_grants
+where table_schema = 'public' and grantee in ('anon','authenticated')
+order by table_name, grantee;
+```
+
+You want rows for `authenticated` (select, insert, update, delete) and for `anon`
+(select) on all four tables.
+
+**`email_address_invalid` on signup**
+The `AUTH_EMAIL_DOMAIN` in `js/config.js` is a reserved name. Use a normal domain
+— `netsight.lv` works, `netsight.local` does not.
+
 **"That account has no profile and cannot sign in"**
 The trigger did not run. Re-run `003_full_schema.sql` and check
 **Database → Triggers** for `on_auth_user_created`.
@@ -186,5 +221,7 @@ drop function if exists public.my_role() cascade;
 
 Then run `003_full_schema.sql` again. Auth users survive in `auth.users` —
 delete them under **Authentication → Users** if you want a genuinely clean start.
+
+
 
 
