@@ -19,6 +19,8 @@ const App = (function() {
 
     Theme.init();
     Auth.mount(session);
+    syncAccountCard(session);
+    bindAccount();
     Detect.load();
 
     isInspectorMode = new URLSearchParams(window.location.search).get('inspector') === 'true';
@@ -121,7 +123,6 @@ const App = (function() {
       UIModule.showToast(e.target.checked ? 'Registry layer on' : 'Registry layer off', 'info');
     });
 
-    document.getElementById('btn-report-all')?.addEventListener('click', reportAllUnverified);
 
     // Keyboard: R = new report, Esc = back to map
     document.addEventListener('keydown', e => {
@@ -163,7 +164,7 @@ const App = (function() {
 
     UIModule.hideDetectionResult();
     const preview = document.getElementById('photo-preview');
-    preview?.classList.add('photo-preview--scanning');
+    preview?.classList.add('photo--scanning');
     UIModule.showLoading('Analysing photo…');
 
     try {
@@ -185,7 +186,7 @@ const App = (function() {
       console.error('Detection failed:', err);
       UIModule.showToast('AI detection failed: ' + err.message, 'error');
     } finally {
-      preview?.classList.remove('photo-preview--scanning');
+      preview?.classList.remove('photo--scanning');
       UIModule.hideLoading();
       detecting = false;
       syncDetectChrome();
@@ -341,47 +342,64 @@ const App = (function() {
     });
   }
 
-  async function reportAllUnverified() {
-    const targets = sightings.filter(s => !s.registry_match && s.status === 'new');
-    if (targets.length === 0) {
-      UIModule.showToast('Nothing unverified to report', 'info');
-      return;
-    }
-    const ok = await UIModule.confirm(
-      `Report ${targets.length} unverified sighting(s)?`,
-      { confirmLabel: 'Report all', danger: true }
-    );
-    if (!ok) return;
+  // --------------------------------------------------------- account + status
 
-    UIModule.showLoading('Reporting…');
-    let updated = 0;
-    try {
-      for (const s of targets) {
-        try {
-          await StoreModule.updateSightingUnified(s.id, { status: 'reported', report_reason: 'other' });
-          updated++;
-        } catch (err) {
-          console.warn('Failed for', s.id, err);
-        }
-      }
-      await loadSightings();
-      UIModule.showToast(`Reported ${updated} case(s)`, 'success');
-    } finally {
-      UIModule.hideLoading();
+  // Fills the account card. A normal user never sees anything about roles,
+  // patrol or the admin panel — just who they are.
+  function syncAccountCard(session) {
+    const name = (session && (session.displayName || session.username)) || '—';
+    const initial = name.charAt(0).toUpperCase();
+
+    const avatar = document.getElementById('account-avatar');
+    const nameEl = document.getElementById('account-name');
+    const metaEl = document.getElementById('account-meta');
+
+    if (avatar) avatar.textContent = initial;
+    if (nameEl) nameEl.textContent = name;
+    if (metaEl) {
+      metaEl.textContent = session && session.role === 'user'
+        ? 'Signed in · you can report sightings'
+        : 'Signed in';
     }
   }
 
-  // --------------------------------------------------------- detection status
+  function bindAccount() {
+    document.getElementById('btn-change-pw')?.addEventListener('click', async () => {
+      const session = Auth.current();
+      if (!session) return;
 
+      const status = document.getElementById('pw-status');
+      const say = (msg, tone) => {
+        status.textContent = msg;
+        status.dataset.tone = tone;
+      };
+
+      const result = await Auth.changePassword(
+        session.username,
+        document.getElementById('pw-old').value,
+        document.getElementById('pw-new').value,
+        document.getElementById('pw-new2').value
+      );
+
+      if (!result.ok) return say(result.message, 'error');
+
+      document.getElementById('pw-old').value = '';
+      document.getElementById('pw-new').value = '';
+      document.getElementById('pw-new2').value = '';
+      say('Password updated', 'ok');
+      UIModule.showToast('Password updated', 'success');
+    });
+  }
+
+  // Plain-language state of the photo check. No endpoint, no admin wording.
   function syncDetectChrome() {
-    const cfg = Detect.get();
-    const configured = !!cfg.endpoint;
+    const configured = !!Detect.get().endpoint;
 
     const pill = document.getElementById('ai-pill');
     if (pill) {
       pill.dataset.mode = configured ? 'live' : 'off';
       const text = pill.querySelector('.pill__text');
-      if (text) text.textContent = configured ? 'AI on' : 'AI off';
+      if (text) text.textContent = configured ? 'Photo check on' : 'Photo check off';
     }
 
     const dot = document.getElementById('ai-dot');
@@ -392,21 +410,20 @@ const App = (function() {
     if (dot) dot.dataset.state = configured ? 'ready' : 'off';
 
     if (headline) {
-      headline.textContent = configured ? 'Model connected' : 'Not connected';
+      headline.textContent = configured ? 'Ready' : 'Not available';
     }
 
     if (detail) {
       detail.textContent = configured
-        ? cfg.endpoint
-        : 'Set the model endpoint in Admin → AI.';
+        ? 'Photos are checked for fishing nets'
+        : 'Photos are not checked right now — pick the type yourself';
     }
 
-    if (count) {
-      count.textContent = Math.round(cfg.minConfidence * 100) + '% threshold';
-    }
+    if (count) count.textContent = configured ? 'on' : 'off';
 
     document.body.dataset.ai = configured ? 'ready' : 'off';
   }
+
   // ----------------------------------------------------------------- cleanup
 
   window.addEventListener('beforeunload', () => {
@@ -426,6 +443,8 @@ const App = (function() {
 
 document.addEventListener('DOMContentLoaded', () => App.init());
 window.App = App;
+
+
 
 
 

@@ -14,7 +14,7 @@
        Runs before anything else so the app never boots on mixed assets. -->
   <script>
   (function () {
-    var BUILD = '2026.11.25.2';
+    var BUILD = '2026.11.25.3';
     var KEY = 'netsight_build';
     var seen = null;
     try { seen = localStorage.getItem(KEY); } catch (e) {}
@@ -52,10 +52,10 @@
   <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
         integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
   <link rel="preconnect" href="https://tile.openstreetmap.org">
-  <link rel="stylesheet" href="css/style.css?v=2026.11.25.2">
+  <link rel="stylesheet" href="css/style.css?v=2026.11.25.3">
 
-  <script src="js/config.js?v=2026.11.25.2"></script>
-  <script src="js/theme.js?v=2026.11.25.2"></script>
+  <script src="js/config.js?v=2026.11.25.3"></script>
+  <script src="js/theme.js?v=2026.11.25.3"></script>
 </head>
 <body>
 
@@ -263,7 +263,7 @@
           </header>
           <div class="card__body">
             <textarea id="note-input" class="input input--area" rows="3" maxlength="500"
-                      placeholder="Anything the inspector should know…"></textarea>
+                      placeholder="Anything worth noting at this spot…"></textarea>
           </div>
         </section>
 
@@ -290,28 +290,42 @@
 
     <div class="screen__body stack">
 
-      <!-- AI status -->
+      <!-- Account -->
       <section class="card">
         <header class="card__head">
-          <h2 class="card__title">AI detection</h2>
-          <span class="tag" id="ai-model-count">—</span>
+          <h2 class="card__title">Account</h2>
         </header>
-
         <div class="card__body stack-sm">
-          <div class="ai-status-row">
-            <span class="ai-status-row__dot" id="ai-dot" data-state="off"></span>
-            <div class="ai-status-row__text">
-              <span class="ai-status-row__title" id="ai-headline">Not connected</span>
-              <span class="ai-status-row__sub" id="ai-detail">Set the model endpoint in Admin → AI.</span>
+          <div class="account">
+            <span class="account__avatar" id="account-avatar">?</span>
+            <div class="account__text">
+              <span class="account__name" id="account-name">—</span>
+              <span class="account__meta" id="account-meta">Signed in</span>
             </div>
           </div>
 
-          <a class="btn btn--soft btn--block" href="admin.html">Open admin panel</a>
-          <p class="hint">
-            The photo goes to your trained model, which answers whether there is a fishing net in the water. When no model is connected the app says so instead of inventing a result.
-          </p>
+          <label class="field">
+            <span class="field__label">Current password</span>
+            <input class="input" id="pw-old" type="password" autocomplete="current-password">
+          </label>
+          <label class="field">
+            <span class="field__label">New password</span>
+            <input class="input" id="pw-new" type="password" autocomplete="new-password">
+          </label>
+          <label class="field">
+            <span class="field__label">Repeat new password</span>
+            <input class="input" id="pw-new2" type="password" autocomplete="new-password">
+          </label>
+
+          <button type="button" class="btn btn--soft btn--block" id="btn-change-pw">
+            Change password
+          </button>
+          <p class="note" id="pw-status" data-tone="muted"></p>
+
+          <button type="button" class="btn btn--ghost btn--block" data-signout>Sign out</button>
         </div>
       </section>
+
       <!-- Map -->
       <section class="card">
         <header class="card__head">
@@ -331,16 +345,24 @@
         </div>
       </section>
 
-      <!-- Authorities -->
+      <!-- Detection -->
       <section class="card">
         <header class="card__head">
-          <h2 class="card__title">Authorities</h2>
+          <h2 class="card__title">Photo check</h2>
+          <span class="tag" id="ai-model-count">—</span>
         </header>
         <div class="card__body stack-sm">
-          <button type="button" class="btn btn--danger btn--lg btn--block" id="btn-report-all">
-            Report all unverified
-          </button>
-          <p class="hint">Escalates every unverified sighting with status “new”.</p>
+          <div class="ai-status-row">
+            <span class="ai-status-row__dot" id="ai-dot" data-state="off"></span>
+            <div class="ai-status-row__text">
+              <span class="ai-status-row__title" id="ai-headline">Not available</span>
+              <span class="ai-status-row__sub" id="ai-detail">Try again later.</span>
+            </div>
+          </div>
+          <p class="hint">
+            When you add a photo it is checked for fishing nets. You always confirm
+            the gear type yourself before saving.
+          </p>
         </div>
       </section>
 
@@ -350,18 +372,9 @@
           <h2 class="card__title">About</h2>
         </header>
         <div class="card__body stack-sm">
-          <div class="ai-status-row">
-            <span class="ai-status-row__dot" data-state="ready"></span>
-            <div class="ai-status-row__text">
-              <span class="ai-status-row__title" data-role-label>User</span>
-              <span class="ai-status-row__sub">Signed in · reports and map</span>
-            </div>
-          </div>
-          <button type="button" class="btn btn--ghost btn--block" data-signout>Sign out</button>
-
           <p class="hint">
-            NetSight prototype · Riga waterways. No personal data is stored; photos carry no identity.
-            Detection below the threshold requires manual confirmation.
+            NetSight · Riga waterways. Report lost or abandoned fishing gear so it can
+            be cleared. No personal data is stored and photos carry no identity.
           </p>
           <a class="link" href="reset.html?manual">Clear cached files (troubleshooting) →</a>
         </div>
@@ -411,17 +424,19 @@
   <!-- ============ scripts ============ -->
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/status.js?v=2026.11.25.2"></script>
-  <script src="js/location.js?v=2026.11.25.2"></script>
-  <script src="js/registry.js?v=2026.11.25.2"></script>
-  <script src="js/map.js?v=2026.11.25.2"></script>
-  <script src="js/ui.js?v=2026.11.25.2"></script>
-  <script src="js/detection.js?v=2026.11.25.2"></script>
-  <script src="js/store.js?v=2026.11.25.2"></script>
-  <script src="js/auth.js?v=2026.11.25.2"></script>
-  <script src="js/app.js?v=2026.11.25.2"></script>
+  <script src="js/status.js?v=2026.11.25.3"></script>
+  <script src="js/location.js?v=2026.11.25.3"></script>
+  <script src="js/registry.js?v=2026.11.25.3"></script>
+  <script src="js/map.js?v=2026.11.25.3"></script>
+  <script src="js/ui.js?v=2026.11.25.3"></script>
+  <script src="js/detection.js?v=2026.11.25.3"></script>
+  <script src="js/store.js?v=2026.11.25.3"></script>
+  <script src="js/auth.js?v=2026.11.25.3"></script>
+  <script src="js/app.js?v=2026.11.25.3"></script>
 </body>
 </html>
+
+
 
 
 

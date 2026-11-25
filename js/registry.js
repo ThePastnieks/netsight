@@ -104,24 +104,15 @@ const RegistryModule = (function() {
   }
 
   // Get registry item by ID
-  function getById(id) {
-    return (registryCache || []).find(item => item.id === id) || null;
-  }
 
   // Clear cache (for testing)
-  function clearCache() {
-    registryCache = null;
-    loadPromise = null;
-  }
 
   // Public API
   return {
     loadRegistry,
     matchRegistry,
-    getById,
     typesCompatible,
     haversineMeters,
-    clearCache,
     get registry() { return registryCache; }
   };
 })();

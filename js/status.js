@@ -1,4 +1,4 @@
-// NetSight Status Module
+﻿// NetSight Status Module
 // Status labels, transitions, colours and validation
 
 const StatusModule = (function() {
@@ -52,9 +52,6 @@ const StatusModule = (function() {
     return TRANSITIONS[status] || [];
   }
 
-  function isTerminal(status) {
-    return getAllowedTransitions(status).length === 0;
-  }
 
   function getStatusPriority(status) {
     return PRIORITY[status] || 0;
@@ -82,9 +79,6 @@ const StatusModule = (function() {
     return statusColor(sighting.status);
   }
 
-  function getStatusHex(status) {
-    return (CONFIG.COLORS && CONFIG.COLORS[statusColor(status)]) || '#7D8C99';
-  }
 
   function isGearClass(cls) {
     return CONFIG.GEAR_CLASSES.includes(cls);
@@ -151,10 +145,8 @@ const StatusModule = (function() {
     getReasonLabel,
     getAllowedTransitions,
     getStatusPriority,
-    isTerminal,
     statusColor,
     pinColor,
-    getStatusHex,
     isGearClass,
     isStatus,
     validateSighting
@@ -166,3 +158,5 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.StatusModule = StatusModule;
 }
+
+

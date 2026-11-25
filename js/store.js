@@ -1,4 +1,4 @@
-// NetSight Store Module
+﻿// NetSight Store Module
 // Supabase client for sightings CRUD, photo upload, and realtime
 
 const StoreModule = (function() {
@@ -87,9 +87,6 @@ const StoreModule = (function() {
   }
 
   // Check if URL is a data URL
-  function isDataUrl(url) {
-    return typeof url === 'string' && url.startsWith('data:');
-  }
 
   // Create a new sighting
   async function createSighting(sighting) {
@@ -205,13 +202,6 @@ const StoreModule = (function() {
   }
 
   // Unsubscribe from realtime
-  function unsubscribe() {
-    const client = getClient();
-    if (channel && client) {
-      client.removeChannel(channel);
-      channel = null;
-    }
-  }
 
   // Demo mode: use localStorage for offline persistence
   const DEMO_STORAGE_KEY = 'netsight_sightings';
@@ -463,14 +453,12 @@ const StoreModule = (function() {
     initClient,
     getClient,
     uploadPhoto,
-    isDataUrl,
     createSighting,
     getSightings,
     getSighting,
     updateSighting,
     updateSightingStatus,
     subscribeToSightings,
-    unsubscribe,
     // Unified (demo-aware) methods
     createSightingUnified,
     getSightingsUnified,
@@ -490,3 +478,4 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.StoreModule = StoreModule;
 }
+

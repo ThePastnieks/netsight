@@ -251,9 +251,6 @@ const UIModule = (function() {
     return selectedPhotoFile;
   }
 
-  function getSelectedPhotoUrl() {
-    return selectedPhotoUrl;
-  }
 
   function hideDetectionResult() {
     const container = document.getElementById('detection-result');
@@ -605,7 +602,6 @@ const UIModule = (function() {
     setupPhotoPreview,
     clearPhotoPreview,
     getSelectedPhotoFile,
-    getSelectedPhotoUrl,
     showDetectionResult,
     renderDetectionsOverlay,
     hideDetectionResult,
@@ -628,5 +624,6 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.UIModule = UIModule;
 }
+
 
 

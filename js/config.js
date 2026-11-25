@@ -2,7 +2,7 @@
 
 // Build stamp — bump this on every release. It is used to bust browser caches
 // (asset query strings) and to purge stale service workers.
-const NETSIGHT_BUILD = '2026.11.25.2';
+const NETSIGHT_BUILD = '2026.11.25.3';
 
 const CONFIG = {
   BUILD: NETSIGHT_BUILD,
@@ -34,7 +34,6 @@ const CONFIG = {
 
   MATCH_RADIUS_M: 50,
   MAX_PHOTO_MB: 5,
-  MAX_IMAGE_SIDE_PX: 1280,
 
   // Map configuration
   MAP_CENTER: [56.9496, 24.1052], // Riga
@@ -57,16 +56,6 @@ const CONFIG = {
 
   // Status values
   STATUSES: ['new', 'reported', 'checked', 'resolved', 'false_alarm'],
-  REPORT_REASONS: ['unmarked', 'abandoned', 'hazard', 'possibly_illegal', 'other'],
-
-  // Registry type compatibility
-  COMPATIBILITY: {
-    buoy: ['buoy', 'net', 'trap'],
-    float: ['net', 'buoy'],
-    net: ['net'],
-    trap: ['trap'],
-    unknown: []
-  },
 
   // ------------------------------------------------------------------- auth
   // Username + password accounts, kept in this browser. The account's role
@@ -113,6 +102,10 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.CONFIG = CONFIG;
 }
+
+
+
+
 
 
 

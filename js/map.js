@@ -181,13 +181,7 @@ const MapModule = (function() {
     return applyFilter();
   }
 
-  function getFilter() {
-    return currentFilter;
-  }
 
-  function getVisibleSightings() {
-    return filteredSightings.slice();
-  }
 
   function refresh() {
     return applyFilter();
@@ -198,10 +192,6 @@ const MapModule = (function() {
     map.setView([lat, lon], zoom || Math.max(map.getZoom(), 14));
   }
 
-  function focusSighting(id) {
-    const s = allSightings.find(x => x.id === id);
-    if (s) focusOn(s.lat, s.lon, 16);
-  }
 
   // --------------------------------------------------------- user position
 
@@ -345,11 +335,8 @@ const MapModule = (function() {
     getMap,
     renderSightings,
     setFilter,
-    getFilter,
-    getVisibleSightings,
     refresh,
     focusOn,
-    focusSighting,
     showUserPosition,
     toggleRegistryLayer,
     openPicker,
@@ -363,5 +350,8 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.MapModule = MapModule;
 }
+
+
+
 
 
