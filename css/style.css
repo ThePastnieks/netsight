@@ -3387,3 +3387,188 @@
     color: var(--muted);
   }
 }
+
+/* ===================== PHOTOS ON CASES ================================ */
+@layer components {
+  /* A photo is the evidence, so it gets real estate on the card, not a 24 px
+     icon. Tap target is the whole image. */
+  .case-photo {
+    position: relative;
+    display: block;
+    width: 100%;
+    padding: 0;
+    margin-bottom: var(--s2);
+    border: 0;
+    border-radius: var(--r-md);
+    overflow: hidden;
+    background: var(--surface-3);
+    cursor: pointer;
+    aspect-ratio: 16 / 10;
+  }
+
+  .case-photo img {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .case-photo__zoom {
+    position: absolute;
+    right: var(--s2);
+    bottom: var(--s2);
+    padding: 5px 10px;
+    border-radius: var(--r-full);
+    background: rgb(0 0 0 / 0.62);
+    color: #fff;
+    font: 600 11.5px/1 var(--font);
+    backdrop-filter: blur(4px);
+  }
+
+  .case-photo:active img { opacity: 0.88; }
+
+  .case-detail__photo-btn {
+    display: block;
+    width: 100%;
+    padding: 0;
+    border: 0;
+    border-radius: var(--r-md);
+    overflow: hidden;
+    cursor: pointer;
+    background: var(--surface-3);
+  }
+
+  .case-detail__photo {
+    width: 100%;
+    max-height: 46vh;
+    object-fit: contain;
+    display: block;
+    background: #000;
+  }
+
+  /* ===================== LIGHTBOX ======================================= */
+
+  .lightbox {
+    position: fixed;
+    inset: 0;
+    z-index: 3000;
+    display: grid;
+    place-items: center;
+    background: rgb(0 0 0 / 0.94);
+    opacity: 0;
+    transition: opacity 0.18s ease;
+    cursor: zoom-out;
+  }
+
+  .lightbox--visible { opacity: 1; }
+
+  .lightbox__img {
+    max-width: 100vw;
+    max-height: 100vh;
+    object-fit: contain;
+    touch-action: pinch-zoom;
+  }
+
+  /* ===================== QR CARD ======================================== */
+
+  .qr-card {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--s3);
+    text-align: center;
+  }
+
+  .qr-card__label {
+    margin: 0;
+    font: 650 14px/1.3 var(--font);
+    color: var(--muted);
+  }
+
+  /* White plate: a QR on a dark background is unreadable to most scanners. */
+  .qr-card__frame {
+    padding: var(--s3);
+    border-radius: var(--r-md);
+    background: #fff;
+    line-height: 0;
+  }
+
+  .qr-card__frame svg {
+    width: min(62vw, 260px);
+    height: auto;
+    display: block;
+  }
+
+  .qr-card__code {
+    font-family: var(--mono);
+    font-size: 20px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: var(--text);
+  }
+
+  .qr-card__note {
+    margin: 0;
+    font-size: 12.5px;
+    line-height: 1.45;
+    color: var(--muted);
+  }
+
+  /* ===================== SCANNER ======================================== */
+
+  .scan-wrap {
+    position: relative;
+    margin: 0 var(--s3);
+    border-radius: var(--r-md);
+    overflow: hidden;
+    background: #000;
+    aspect-ratio: 4 / 3;
+  }
+
+  .scan-video {
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    display: block;
+  }
+
+  .scan-frame {
+    position: absolute;
+    inset: 18%;
+    border: 3px solid rgb(255 255 255 / 0.85);
+    border-radius: var(--r-md);
+    box-shadow: 0 0 0 100vmax rgb(0 0 0 / 0.35);
+  }
+
+  .scan-note {
+    margin: var(--s3);
+    text-align: center;
+    font: 600 13.5px/1.4 var(--font);
+    color: var(--muted);
+  }
+}
+
+/* ===================== CASE STATUS FOR THE REPORTER =================== */
+@layer components {
+  .case-status {
+    margin: 0;
+    padding: var(--s2) var(--s3);
+    border-radius: var(--r-md);
+    font: 650 13px/1.35 var(--font);
+  }
+
+  .case-status--waiting {
+    background: var(--surface-3);
+    color: var(--muted);
+  }
+
+  .case-status--open {
+    background: color-mix(in oklab, var(--info) 15%, transparent);
+    color: var(--info);
+  }
+
+  .case-status--closed {
+    background: var(--ok-soft);
+    color: var(--ok);
+  }
+}

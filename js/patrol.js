@@ -1,4 +1,4 @@
-// NetSight Water Patrol
+﻿// NetSight Water Patrol
 //
 // Written for cold hands. Every control is at least 56 px tall, decisions happen
 // inline on the card rather than behind a modal, and there are two tabs instead
@@ -228,6 +228,14 @@ const Patrol = (function() {
       });
     });
 
+    host.querySelectorAll('[data-photo]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const c = cases.find(x => x.id === btn.dataset.photo);
+        if (c) openPhoto(photoUrl(c));
+      });
+    });
+
     host.querySelectorAll('[data-send]').forEach(btn => {
       btn.addEventListener('click', e => {
         e.stopPropagation();
@@ -246,6 +254,15 @@ const Patrol = (function() {
 
     // Load any threads that are open.
     expanded.forEach(id => loadThread(id));
+  }
+
+// A photo is the evidence. If it will not load it is worse than nothing, so
+  // unusable values are treated as absent rather than shown as a broken box.
+  function photoUrl(c) {
+    const url = c && c.photo_url;
+    if (!url || typeof url !== 'string') return null;
+    if (!url.startsWith('data:') && !url.startsWith('http')) return null;
+    return url;
   }
 
   function caseCard(c) {
@@ -268,6 +285,12 @@ const Patrol = (function() {
       '  </div>',
 
       '  <div class="case-card__body">',
+      photoUrl(c)
+        ? '    <button type="button" class="case-photo" data-photo="' +
+            UIModule.escapeHtml(c.id) + '" aria-label="Photo">' +
+            '<img src="' + UIModule.escapeHtml(photoUrl(c)) + '" alt="" loading="lazy">' +
+            '<span class="case-photo__zoom">Tap to enlarge</span></button>'
+        : '',
       '    <span class="case-owner-line">' + ownershipLine(c) + '</span>',
       length ? '    <span class="case-meta">' + UIModule.escapeHtml(length) + '</span>' : '',
       '  </div>',
@@ -350,6 +373,13 @@ const Patrol = (function() {
 
     return [
       '<div class="case-detail">',
+
+      photoUrl(c)
+        ? '  <button type="button" class="case-detail__photo-btn" data-photo="' +
+            UIModule.escapeHtml(c.id) + '" aria-label="Photo">' +
+            '<img class="case-detail__photo" src="' + UIModule.escapeHtml(photoUrl(c)) +
+            '" alt="" loading="lazy"></button>'
+        : '  <p class="case-note case-note--empty">No photo — the reporter did not attach one.</p>',
 
       note
         ? '  <p class="case-note">' + UIModule.escapeHtml(note) + '</p>'
@@ -505,6 +535,108 @@ const Patrol = (function() {
     }
   }
 
+// ------------------------------------------------------------- QR scanning
+
+  let scanStop = false;
+
+  function bindScan() {
+    document.getElementById('btn-id-scan')?.addEventListener('click', startScan);
+    document.getElementById('btn-scan-cancel')?.addEventListener('click', () => {
+      scanStop = true;
+      closeScan();
+    });
+  }
+
+  async function startScan() {
+    const modal = document.getElementById('scan-modal');
+    const note = document.getElementById('scan-note');
+    const video = document.getElementById('scan-video');
+    if (!modal) return;
+
+    if (typeof QrModule === 'undefined' || !QrModule.scannerSupported()) {
+      UIModule.showToast(
+        'This browser cannot scan QR codes. Type the code instead.',
+        'warning'
+      );
+      return;
+    }
+
+    scanStop = false;
+    modal.hidden = false;
+    void modal.offsetHeight;
+    modal.classList.add('sheet--visible');
+    if (note) note.textContent = 'Starting the camera…';
+
+    const result = await QrModule.scan({
+      shouldStop: () => scanStop,
+      onVideo: stream => {
+        if (video) {
+          video.srcObject = stream;
+          video.play().catch(() => {});
+        }
+        if (note) note.textContent = 'Looking for a code…';
+      }
+    });
+
+    closeScan();
+
+    if (!result.ok) {
+      UIModule.showToast(result.reason, 'warning');
+      return;
+    }
+
+    const code = QrModule.extractCode(result.text);
+
+    if (!code) {
+      UIModule.showToast('That QR is not a NetSight code', 'warning');
+      return;
+    }
+
+    const input = document.getElementById('id-code');
+    if (input) input.value = code;
+
+    showIdentification(IdentifyModule.byCode(code));
+    UIModule.showToast('Scanned ' + code, 'success');
+  }
+
+  function closeScan() {
+    const modal = document.getElementById('scan-modal');
+    if (!modal) return;
+
+    const video = document.getElementById('scan-video');
+    if (video && video.srcObject) {
+      video.srcObject.getTracks().forEach(t => t.stop());
+      video.srcObject = null;
+    }
+
+    modal.classList.remove('sheet--visible');
+    modal.hidden = true;
+  }
+
+// Full screen, pinch-to-zoom, tap anywhere to dismiss. Looking at a photo is
+  // the whole point of having one, so it gets the screen.
+  function openPhoto(url) {
+    if (!url) return;
+
+    let host = document.getElementById('photo-lightbox');
+    if (!host) {
+      host = document.createElement('div');
+      host.id = 'photo-lightbox';
+      host.className = 'lightbox';
+      document.body.appendChild(host);
+
+      host.addEventListener('click', () => {
+        host.classList.remove('lightbox--visible');
+        setTimeout(() => { host.hidden = true; host.innerHTML = ''; }, 180);
+      });
+    }
+
+    host.innerHTML = '<img class="lightbox__img" src="' + UIModule.escapeHtml(url) + '" alt="">';
+    host.hidden = false;
+    void host.offsetHeight;
+    host.classList.add('lightbox--visible');
+  }
+
   // ------------------------------------------------------------- identify
 
   function bindIdentify() {
@@ -534,6 +666,7 @@ const Patrol = (function() {
     });
 
     document.getElementById('btn-id-map')?.addEventListener('click', openIdMap);
+    bindScan();
     document.getElementById('btn-id-map-cancel')?.addEventListener('click', closeIdMap);
   }
 
@@ -721,3 +854,8 @@ const Patrol = (function() {
 
 document.addEventListener('DOMContentLoaded', () => Patrol.init());
 window.Patrol = Patrol;
+
+
+
+
+

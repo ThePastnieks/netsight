@@ -436,6 +436,7 @@ const UIModule = (function() {
           <span class="monospace">${latStr}</span>
         </div>
         <p class="${ownerClass}">${escapeHtml(ownerText)}</p>
+        ${caseStatusLine(sighting)}
         <dl class="case-detail__labels">
           <dt>Type</dt><dd>${sighting.user_class || 'unknown'}</dd>
           ${lengthLine}
@@ -477,6 +478,30 @@ const UIModule = (function() {
 
     showModal('Sighting Details', content, actions);
     wireDetailThread(sighting.id);
+  }
+
+// What happened to this report, in the reporter's words. Without it someone
+  // reports a net and never learns whether anybody looked.
+  function caseStatusLine(sighting) {
+    if (typeof CaseModule === 'undefined') return '';
+
+    if (sighting.verdict === 'declined') {
+      const r = CaseModule.declineInfo(sighting.decline_reason);
+      return `<p class="case-status case-status--closed">Closed — ${escapeHtml(
+        r ? r.label.toLowerCase() : 'no action needed'
+      )}</p>`;
+    }
+
+    if (sighting.verdict === 'accepted') {
+      const sev = CaseModule.severityLabel(sighting.severity).toLowerCase();
+      return `<p class="case-status case-status--open">Patrol took this on · ${escapeHtml(sev)}</p>`;
+    }
+
+    if (sighting.status === 'resolved') {
+      return '<p class="case-status case-status--closed">Resolved — thank you</p>';
+    }
+
+    return '<p class="case-status case-status--waiting">Waiting for patrol</p>';
   }
 
   // The conversation under a report. Loads after the modal opens so the sheet
@@ -583,6 +608,25 @@ const UIModule = (function() {
   }
 
 
+// A code big enough to scan across a boat, with the text underneath so it can
+  // still be read aloud when the camera will not cooperate.
+  function showQrModal(code, label, svg) {
+    return new Promise((resolve) => {
+      const content = [
+        '<div class="qr-card">',
+        label ? '<p class="qr-card__label">' + escapeHtml(label) + '</p>' : '',
+        '<div class="qr-card__frame">' + svg + '</div>',
+        '<span class="qr-card__code">' + escapeHtml(code) + '</span>',
+        '<p class="qr-card__note">Print this and stick it on the buoy.</p>',
+        '</div>'
+      ].join('');
+
+      showModal('QR code', content, [
+        { label: 'Done', action: 'confirm', class: 'btn--primary', handler: () => resolve(true) }
+      ]);
+    });
+  }
+
   // A code has to be readable and copyable, not buried in a sentence.
   function showCodeModal(title, code, message) {
     return new Promise((resolve) => {
@@ -669,6 +713,7 @@ const UIModule = (function() {
     confirm,
     prompt,
     showCodeModal,
+    showQrModal,
     init,
     escapeHtml
   };
@@ -680,6 +725,9 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.UIModule = UIModule;
 }
+
+
+
 
 
 

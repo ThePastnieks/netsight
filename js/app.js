@@ -376,6 +376,20 @@ const App = (function() {
       : fence.reason;
   }
 
+// Two people reporting the same net is normal. Silently creating a second case
+  // makes the patrol list lie about how much work there is, so ask instead.
+  function findNearbyReport(lat, lon, cls) {
+    const radius = 40;
+
+    return sightings.find(s => {
+      if (!CaseModule.isOpen(s)) return false;
+      if (s.user_class !== cls) return false;
+      if (!Number.isFinite(s.lat) || !Number.isFinite(s.lon)) return false;
+
+      return Devices.haversine(lat, lon, s.lat, s.lon) <= radius;
+    }) || null;
+  }
+
   // The one place that decides whether a report may be saved. Returns null when
   // it is fine, or the reason it is not.
   function checkReport() {
@@ -434,6 +448,44 @@ const App = (function() {
             lon: Shore.spanMidpoint(reportSpan[0], reportSpan[1])[1],
             accuracy: null }
         : (reportLocation || LocationModule.getLastPosition());
+
+      // Someone may have reported the same thing already. Ask before making a
+      // second case — two cases for one net make the list lie about the work.
+      const nearby = findNearbyReport(location.lat, location.lon, userClass);
+
+      if (nearby) {
+        const minutes = Math.max(1, Math.round((Date.now() - new Date(nearby.created_at)) / 60000));
+
+        const addInstead = await UIModule.confirm(
+          'Someone reported a ' + userClass + ' here ' + minutes +
+          ' minutes ago. Add your photo and description to that report instead of making a new one?',
+          { title: 'Already reported', confirmLabel: 'Add to it', cancelLabel: 'Make a new one' }
+        );
+
+        if (addInstead) {
+          const photo = UIModule.getSelectedPhotoFile();
+          const note = (document.getElementById('note-input')?.value || '').trim();
+
+          if (photo) {
+            const extra = await StoreModule.uploadPhoto(photo, nearby.id + '-extra');
+            if (extra) {
+              await CaseModule.sendMessage(nearby.id, 'Another report from nearby.' + (note ? ' ' + note : ''));
+              UIModule.showToast('Added to the existing report', 'success');
+            }
+          } else if (note) {
+            await CaseModule.sendMessage(nearby.id, note);
+            UIModule.showToast('Added to the existing report', 'success');
+          } else {
+            UIModule.showToast('Nothing to add — opening that report', 'info');
+          }
+
+          clearReportForm();
+          UIModule.showScreen('map');
+          startLocationTracking();
+          await loadSightings();
+          return;
+        }
+      }
 
       UIModule.showLoading('Saving…');
 
@@ -559,6 +611,14 @@ const App = (function() {
         expired ? ' · expired' : ' · active',
         '    </span>',
         '  </div>',
+        '  <button type="button" class="icon-btn icon-btn--sm" data-show-qr="' + escapeAttr(gear.code) + '"',
+        '          aria-label="QR for ' + escapeAttr(gear.code) + '">',
+        '    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">',
+        '      <rect x="3" y="3" width="6" height="6"></rect><rect x="15" y="3" width="6" height="6"></rect>',
+        '      <rect x="3" y="15" width="6" height="6"></rect>',
+        '      <path d="M15 15h2v2h-2zM19 19h2v2h-2zM15 19h2v2h-2z"></path>',
+        '    </svg>',
+        '  </button>',
         '  <button type="button" class="icon-btn icon-btn--sm" data-withdraw="' + escapeAttr(gear.id) + '"',
         '          aria-label="Withdraw ' + escapeAttr(gear.code) + '">',
         '    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">',
@@ -569,9 +629,32 @@ const App = (function() {
       ].join('');
     }).join('');
 
+    host.querySelectorAll('[data-show-qr]').forEach(btn => {
+      btn.addEventListener('click', () => showGearQr(btn.dataset.showQr));
+    });
+
     host.querySelectorAll('[data-withdraw]').forEach(btn => {
       btn.addEventListener('click', () => withdrawGear(btn.dataset.withdraw));
     });
+  }
+
+  // The code as a square. An owner prints it, sticks it on the buoy, or holds the
+  // phone up — either way a patrol reads it with one press instead of squinting
+  // at 12 px text.
+  function showGearQr(code) {
+    const gear = GearModule.findByCode(code);
+    const label = gear ? gear.label : code;
+
+    const svg = (typeof QrModule !== 'undefined')
+      ? QrModule.render(code, { cellSize: 6, margin: 2 })
+      : null;
+
+    if (!svg) {
+      UIModule.showToast('QR could not be drawn — the code still works', 'warning');
+      return;
+    }
+
+    UIModule.showQrModal(code, label, svg);
   }
 
   async function withdrawGear(id) {
@@ -769,6 +852,8 @@ const App = (function() {
 
 document.addEventListener('DOMContentLoaded', () => App.init());
 window.App = App;
+
+
 
 
 

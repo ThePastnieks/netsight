@@ -272,6 +272,24 @@ evidence, not proof: two nets can lie in the same bay.
 And a recommendation, so nobody has to reason about it with wet hands: *Legal
 gear — leave it*, *Contact the owner*, or *Collect it*.
 
+### Photos
+
+A photo is the evidence. It appears as a thumbnail on the card and full size when
+the card is open, tap it for a full-screen view. Without a photo a report is an
+assertion; with one it is something a patrol can judge before driving out.
+
+### QR codes
+
+The code is printed on the buoy as text, which is unreadable from a moving boat
+in the rain. The owner can show it as a QR from **My nets**, print that, and stick
+it on the buoy.
+
+Patrol presses **Scan the QR code** and the camera does the rest — the browser's
+own `BarcodeDetector`, so no library, no upload, nothing leaves the device. Where
+the browser cannot scan (no camera, no HTTPS, unsupported), the app says so in a
+sentence and the typed field is still there. The QR is a convenience, never the
+only way in.
+
 ### What is not here
 
 No map tab. The cases are the work; a map you have to pan is not. No settings
@@ -347,6 +365,7 @@ js/
   gear.js                  Registered nets: codes, owner, line matching
   cases.js                 Severity, accept/decline, the conversation
   identify.js              Remote identification: by code, position or device
+  qr.js                    QR render for owners, camera scan for patrol
   map.js                   Leaflet map, pins, filters, shore overlay, pickers
   ui.js                    Screens, sheets, toasts, verdict card, detail view
   store.js                 Sightings CRUD (Supabase, localStorage fallback)
@@ -390,6 +409,7 @@ Supabase provides Postgres, Auth and Storage. Everything the app needs is in
 | `003_full_schema.sql` | everything: profiles, sightings, shore, devices, nets, RLS |
 | `004_grants.sql` | table privileges, if an older copy skipped them |
 | `005_registered_gear.sql` | the nets table alone, for an existing database |
+| `006_case_decisions.sql` | severity, verdict, decline reason, the conversation |
 
 Run `003` on a fresh project and the app is fully wired. Setup steps:
 [docs/SETUP.md](docs/SETUP.md).
@@ -415,6 +435,8 @@ FileReader, fetch, `color-mix()` (graceful fallback), CSS Grid.
 ## License
 
 MIT — prototype for demonstration purposes.
+
+
 
 
 
