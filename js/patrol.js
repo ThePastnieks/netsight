@@ -1,21 +1,26 @@
 // NetSight Water Patrol
 //
-// The patrol sees every case on a map and in a list, opens one, and moves it
-// along: new → reported → checked → resolved | false alarm.
+// Written for cold hands. Every control is at least 56 px tall, decisions happen
+// inline on the card rather than behind a modal, and there are two tabs instead
+// of four. If something needs a second tap it is because it is destructive or
+// irreversible, not because the layout ran out of room.
 //
-// They cannot delete points — that is the admin's job. What they can do that
-// nobody else can is decide whether the net in front of them is legal, which is
-// why the Nets tab exists: read the code off the buoy and the app says whose it
-// is and whether it is still valid.
+// What a patrol actually does, in order:
+//   1. Open the app. See what is waiting.
+//   2. Accept it (and say how urgent) or decline it (and say why).
+//   3. If it is unclear, ask the reporter a question.
+//   4. If they find gear in the water, identify it without driving to it.
 
 const Patrol = (function() {
   'use strict';
 
   let cases = [];
-  let gear = [];
-  let tableFilter = 'all';
-  let tableSort = 'priority';
-  let mapFilter = 'all';
+  let filter = 'open';
+  let expanded = new Set();     // ids of cards showing their detail
+  let deciding = new Set();     // ids mid-decision, to stop double taps
+  let pending = {};             // id -> 'accept' | 'decline' while choosing
+  let idMap = null;
+  let idMarker = null;
 
   // ------------------------------------------------------------------ init
 
@@ -26,49 +31,45 @@ const Patrol = (function() {
     Theme.init();
     Auth.mount(session);
 
-    // UIModule.showDetailView asks window.App what this user may do.
-    window.App = {
-      isInspector: () => true,
-      showStatusChange: changeStatus,
-      showReport: null
-    };
-
     bindTabs();
-    bindMapFilters();
-    bindTableControls();
-    bindGearLookup();
+    bindFilters();
+    bindIdentify();
 
     await RegistryModule.loadRegistry();
     await Shore.load();
     await Devices.load();
     await GearModule.load();
 
-    const map = MapModule.initMap('patrol-map', CONFIG.MAP_CENTER, CONFIG.MAP_ZOOM);
-    if (!map) UIModule.showToast('Map failed to load', 'error');
-
-    // Patrol needs the fleet on the map: an alerting buoy is the case.
-    MapModule.renderDevices(Devices.all());
-    MapModule.toggleDeviceLayer(true);
-    MapModule.toggleZones(true);
-
     await loadCases();
-    renderGearList();
+    renderIdList();
+
     console.log('Water Patrol ready');
   }
 
   async function loadCases() {
     try {
-      cases = await StoreModule.getSightingsUnified(1000);
+      cases = await StoreModule.getSightingsUnified(500);
     } catch (err) {
       console.error('Could not load cases:', err);
       UIModule.showToast('Could not load cases', 'error');
       cases = [];
     }
 
-    MapModule.renderSightings(cases);
-    MapModule.setFilter(mapFilter);
-    renderTable();
-    renderStats();
+    renderCases();
+    renderCounts();
+  }
+
+  function renderCounts() {
+    const open = cases.filter(c => CaseModule.isOpen(c) && !c.verdict).length;
+    const tabCount = document.getElementById('tab-count');
+    if (tabCount) tabCount.textContent = String(open);
+
+    const sub = document.getElementById('patrol-sub');
+    if (sub) {
+      sub.textContent = open === 0
+        ? 'Nothing waiting'
+        : open + (open === 1 ? ' case needs' : ' cases need') + ' action';
+    }
   }
 
   // ------------------------------------------------------------------ tabs
@@ -84,255 +85,536 @@ const Patrol = (function() {
         });
 
         document.querySelector('.screen__body').scrollTop = 0;
-
-        // Leaflet needs a nudge after its container becomes visible again
-        if (btn.dataset.tab === 'map') {
-          setTimeout(() => {
-            const map = MapModule.getMap();
-            if (map) map.invalidateSize();
-          }, 120);
-        }
-
-        if (btn.dataset.tab === 'gear') renderGearList();
       });
     });
   }
 
-  function bindMapFilters() {
+  function bindFilters() {
     document.querySelectorAll('[data-filter]').forEach(chip => {
       chip.addEventListener('click', () => {
         document.querySelectorAll('[data-filter]').forEach(c => c.classList.remove('is-active'));
         chip.classList.add('is-active');
-        mapFilter = chip.dataset.filter;
-        MapModule.setFilter(mapFilter);
+        filter = chip.dataset.filter;
+        renderCases();
       });
     });
   }
 
-  function bindTableControls() {
-    document.querySelectorAll('[data-case-filter]').forEach(chip => {
-      chip.addEventListener('click', () => {
-        document.querySelectorAll('[data-case-filter]').forEach(c => {
-          c.classList.remove('filter-chip--active', 'is-active');
-        });
-        chip.classList.add('filter-chip--active', 'is-active');
-        tableFilter = chip.dataset.caseFilter;
-        renderTable();
-      });
-    });
-
-    document.getElementById('patrol-sort')?.addEventListener('change', e => {
-      tableSort = e.target.value;
-      renderTable();
-    });
-  }
-
-  // ----------------------------------------------------------------- stats
-
-  function renderStats() {
-    const set = (id, n) => {
-      const el = document.getElementById(id);
-      if (el) el.textContent = String(n);
-    };
-
-    set('p-total', cases.length);
-    set('p-reported', cases.filter(c => c.status === 'reported').length);
-    set('p-new', cases.filter(c => c.status === 'new').length);
-    set('p-registered', cases.filter(c => c.registry_match).length);
-
-    const sub = document.getElementById('patrol-sub');
-    if (sub) sub.textContent = cases.length + ' case' + (cases.length === 1 ? '' : 's');
-  }
-
-  // ----------------------------------------------------------------- table
+  // ---------------------------------------------------------------- cases
 
   function visibleCases() {
-    const list = cases.filter(c => tableFilter === 'all' || c.status === tableFilter);
-
-    list.sort((a, b) => {
-      if (tableSort === 'created_asc') return time(a) - time(b);
-      if (tableSort === 'created_desc') return time(b) - time(a);
-      return StatusModule.getStatusPriority(b.status) - StatusModule.getStatusPriority(a.status);
-    });
-
-    return list;
-  }
-
-  function time(c) {
-    return new Date(c.created_at).getTime() || 0;
-  }
-
-  // How the report relates to registered gear. This is the column a patrol
-  // reads first: "legal net, leave it" versus "nobody's, pull it".
-  function ownershipCell(c) {
-    if (!c.registry_match) {
-      return '<span class="owner owner--unknown">Unregistered</span>';
+    if (filter === 'all') return CaseModule.sortForPatrol(cases);
+    if (filter === 'declined') {
+      return cases.filter(c => c.verdict === 'declined')
+        .sort((a, b) => new Date(b.handled_at || b.created_at) - new Date(a.handled_at || a.created_at));
     }
-
-    const registered = GearModule.findByCode(c.registry_id);
-
-    if (registered) {
-      return '<span class="owner owner--known">' + UIModule.escapeHtml(registered.ownerName) +
-        '<span class="owner__code">' + UIModule.escapeHtml(registered.code) + '</span></span>';
-    }
-
-    // Matched against the CSV rather than a registered net.
-    return '<span class="owner owner--known">' +
-      UIModule.escapeHtml(c.registry_id || 'Registered') + '</span>';
+    return CaseModule.sortForPatrol(cases.filter(c => CaseModule.isOpen(c) && !c.verdict));
   }
 
-  function lengthCell(c) {
-    if (!Array.isArray(c.span) || c.span.length !== 2) {
-      return '<span class="cell-muted">—</span>';
-    }
-    const m = Shore.spanLength(c.span[0], c.span[1]);
-    return Math.round(m) + ' m';
-  }
-
-  function renderTable() {
-    const tbody = document.getElementById('patrol-tbody');
-    const empty = document.getElementById('patrol-empty');
-    if (!tbody) return;
-
-    const list = visibleCases();
-
-    if (!list.length) {
-      tbody.innerHTML = '';
-      if (empty) empty.hidden = false;
-      return;
-    }
-
-    if (empty) empty.hidden = true;
-
-    tbody.innerHTML = list.map(c => `
-      <tr data-id="${UIModule.escapeHtml(c.id)}">
-        <td class="cell-type">
-          <span class="gear-type">${UIModule.escapeHtml(c.user_class || '?')}</span>
-        </td>
-        <td>
-          <span class="status-badge status-badge--${c.status}">
-            ${UIModule.escapeHtml(StatusModule.getStatusLabel(c.status))}
-          </span>
-        </td>
-        <td>${ownershipCell(c)}</td>
-        <td class="cell-length">${lengthCell(c)}</td>
-        <td class="cell-time">${UIModule.escapeHtml(relativeTime(c.created_at))}</td>
-        <td class="cell-actions">
-          <button type="button" class="btn btn--ghost btn--sm" data-act="view" data-id="${UIModule.escapeHtml(c.id)}">View</button>
-          <button type="button" class="btn btn--primary btn--sm" data-act="status" data-id="${UIModule.escapeHtml(c.id)}">Status</button>
-        </td>
-      </tr>`).join('');
-
-    tbody.querySelectorAll('[data-act]').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation();
-        const point = cases.find(c => c.id === btn.dataset.id);
-        if (!point) return;
-        if (btn.dataset.act === 'view') UIModule.showDetailView(point);
-        if (btn.dataset.act === 'status') changeStatus(point);
-      });
-    });
-
-    tbody.querySelectorAll('tr[data-id]').forEach(row => {
-      row.addEventListener('click', e => {
-        if (e.target.closest('.cell-actions')) return;
-        const point = cases.find(c => c.id === row.dataset.id);
-        if (point) UIModule.showDetailView(point);
-      });
-    });
-  }
-
-  function relativeTime(iso) {
+  function timeAgo(iso) {
     const t = new Date(iso).getTime();
     if (!Number.isFinite(t)) return '—';
 
     const mins = Math.floor((Date.now() - t) / 60000);
     if (mins < 1) return 'just now';
-    if (mins < 60) return mins + 'm ago';
+    if (mins < 60) return mins + ' min ago';
 
     const hours = Math.floor(mins / 60);
-    if (hours < 24) return hours + 'h ago';
+    if (hours < 24) return hours + (hours === 1 ? ' hour ago' : ' hours ago');
 
     const days = Math.floor(hours / 24);
-    if (days < 7) return days + 'd ago';
+    if (days < 7) return days + (days === 1 ? ' day ago' : ' days ago');
 
     return new Date(iso).toLocaleDateString();
   }
 
-  // ------------------------------------------------------------------ gear
+  function gearTypeLabel(cls) {
+    const map = {
+      net: 'Net', trap: 'Trap', buoy: 'Buoy', float: 'Float', unknown: 'Unknown'
+    };
+    return map[cls] || (cls ? cls.charAt(0).toUpperCase() + cls.slice(1) : 'Unknown');
+  }
 
-  function bindGearLookup() {
-    const input = document.getElementById('gear-lookup');
-    const button = document.getElementById('btn-gear-lookup');
-    if (!input || !button) return;
+  // Everything the patrol needs to know, in the fewest words that still say it.
+  function ownershipLine(c) {
+    if (!c.registry_match) {
+      return '<span class="case-owner case-owner--none">Nobody registered it</span>';
+    }
 
-    const run = () => lookUpGear(input.value);
-    button.addEventListener('click', run);
-    input.addEventListener('keydown', e => {
-      if (e.key === 'Enter') { e.preventDefault(); run(); }
+    const gear = typeof GearModule !== 'undefined' ? GearModule.findByCode(c.registry_id) : null;
+
+    if (gear) {
+      const expired = GearModule.isExpired(gear);
+      return '<span class="case-owner case-owner--' + (expired ? 'warn' : 'ok') + '">' +
+        UIModule.escapeHtml(gear.ownerName) +
+        ' · ' + UIModule.escapeHtml(gear.code) +
+        (expired ? ' · expired' : '') + '</span>';
+    }
+
+    return '<span class="case-owner case-owner--ok">Registered</span>';
+  }
+
+  function lengthLine(c) {
+    if (!Array.isArray(c.span) || c.span.length !== 2) return '';
+    const m = Math.round(Shore.spanLength(c.span[0], c.span[1]));
+    return m + ' m long';
+  }
+
+  function renderCases() {
+    const host = document.getElementById('case-list');
+    const empty = document.getElementById('case-empty');
+    if (!host) return;
+
+    const list = visibleCases();
+
+    if (!list.length) {
+      host.innerHTML = '';
+      if (empty) {
+        empty.hidden = false;
+        const p = empty.querySelector('p');
+        if (p) {
+          p.textContent = filter === 'declined' ? 'Nothing declined' : 'Nothing waiting';
+        }
+      }
+      return;
+    }
+
+    if (empty) empty.hidden = true;
+
+    host.innerHTML = list.map(c => caseCard(c)).join('');
+
+    // Wire each card. Delegation would be shorter but this keeps the handlers
+    // obvious and the cards are few.
+    host.querySelectorAll('[data-open]').forEach(el => {
+      el.addEventListener('click', e => {
+        if (e.target.closest('button')) return;
+        toggleExpanded(el.dataset.open);
+      });
+    });
+
+    host.querySelectorAll('[data-accept]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        chooseSeverity(btn.dataset.accept);
+      });
+    });
+
+    host.querySelectorAll('[data-decline]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        chooseDecline(btn.dataset.decline);
+      });
+    });
+
+    host.querySelectorAll('[data-severity]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        commitAccept(btn.dataset.caseId, btn.dataset.severity);
+      });
+    });
+
+    host.querySelectorAll('[data-reason]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        commitDecline(btn.dataset.caseId, btn.dataset.reason);
+      });
+    });
+
+    host.querySelectorAll('[data-cancel]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        pending[btn.dataset.cancel] = null;
+        renderCases();
+      });
+    });
+
+    host.querySelectorAll('[data-send]').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        sendMessage(btn.dataset.send);
+      });
+    });
+
+    host.querySelectorAll('[data-msg-input]').forEach(input => {
+      input.addEventListener('keydown', e => {
+        if (e.key === 'Enter' && !e.shiftKey) {
+          e.preventDefault();
+          sendMessage(input.dataset.msgInput);
+        }
+      });
+    });
+
+    // Load any threads that are open.
+    expanded.forEach(id => loadThread(id));
+  }
+
+  function caseCard(c) {
+    const isOpen = expanded.has(c.id);
+    const mode = pending[c.id];
+    const done = !!c.verdict;
+
+    const severity = CaseModule.severityInfo(c.severity);
+    const length = lengthLine(c);
+
+    return [
+      '<article class="case-card' + (done ? ' case-card--done' : '') + '" data-open="' + UIModule.escapeHtml(c.id) + '">',
+
+      '  <div class="case-card__top">',
+      '    <span class="case-type">' + UIModule.escapeHtml(gearTypeLabel(c.user_class)) + '</span>',
+      severity
+        ? '    <span class="case-sev case-sev--' + severity.tone + '">' + UIModule.escapeHtml(severity.label) + '</span>'
+        : '',
+      '    <span class="case-time">' + UIModule.escapeHtml(timeAgo(c.created_at)) + '</span>',
+      '  </div>',
+
+      '  <div class="case-card__body">',
+      '    <span class="case-owner-line">' + ownershipLine(c) + '</span>',
+      length ? '    <span class="case-meta">' + UIModule.escapeHtml(length) + '</span>' : '',
+      '  </div>',
+
+      done
+        ? '  <div class="case-card__verdict">' + UIModule.escapeHtml(CaseModule.summary(c)) + '</div>'
+        : renderActions(c, mode),
+
+      isOpen ? renderDetail(c) : '',
+
+      '</article>'
+    ].join('');
+  }
+
+  // The two buttons that matter. Both full width, both enormous.
+  function renderActions(c, mode) {
+    if (mode === 'accept') {
+      const buttons = CaseModule.SEVERITY_ORDER.map(id => {
+        const s = CaseModule.SEVERITY[id];
+        return [
+          '<button type="button" class="sev-btn sev-btn--' + s.tone + '"',
+          ' data-severity="' + s.id + '" data-case-id="' + UIModule.escapeHtml(c.id) + '">',
+          '  <span class="sev-btn__label">' + UIModule.escapeHtml(s.label) + '</span>',
+          '  <span class="sev-btn__hint">' + UIModule.escapeHtml(s.short) + '</span>',
+          '</button>'
+        ].join('');
+      }).join('');
+
+      return [
+        '<div class="case-actions case-actions--choosing">',
+        '  <p class="case-ask">How urgent is it?</p>',
+        '  <div class="sev-grid">' + buttons + '</div>',
+        '  <button type="button" class="big-btn big-btn--ghost" data-cancel="' + UIModule.escapeHtml(c.id) + '">Cancel</button>',
+        '</div>'
+      ].join('');
+    }
+
+    if (mode === 'decline') {
+      const buttons = Object.values(CaseModule.DECLINE_REASONS).map(r => [
+        '<button type="button" class="reason-btn" data-reason="' + r.id + '"',
+        ' data-case-id="' + UIModule.escapeHtml(c.id) + '">',
+        '  <span class="reason-btn__label">' + UIModule.escapeHtml(r.label) + '</span>',
+        '  <span class="reason-btn__hint">' + UIModule.escapeHtml(r.hint) + '</span>',
+        '</button>'
+      ].join('')).join('');
+
+      return [
+        '<div class="case-actions case-actions--choosing">',
+        '  <p class="case-ask">Why not?</p>',
+        '  <div class="reason-grid">' + buttons + '</div>',
+        '  <button type="button" class="big-btn big-btn--ghost" data-cancel="' + UIModule.escapeHtml(c.id) + '">Cancel</button>',
+        '</div>'
+      ].join('');
+    }
+
+    return [
+      '<div class="case-actions">',
+      '  <button type="button" class="big-btn big-btn--primary" data-accept="' + UIModule.escapeHtml(c.id) + '">',
+      '    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true">',
+      '      <path d="M20 6L9 17l-5-5"></path>',
+      '    </svg>',
+      '    Accept',
+      '  </button>',
+      '  <button type="button" class="big-btn big-btn--ghost" data-decline="' + UIModule.escapeHtml(c.id) + '">',
+      '    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" aria-hidden="true">',
+      '      <line x1="18" y1="6" x2="6" y2="18"></line><line x1="6" y1="6" x2="18" y2="18"></line>',
+      '    </svg>',
+      '    Not gear',
+      '  </button>',
+      '</div>'
+    ].join('');
+  }
+
+  // The expanded half: what was said, and a way to ask.
+  function renderDetail(c) {
+    const note = (c.note || '').trim();
+    const coords = Number.isFinite(c.lat)
+      ? c.lat.toFixed(4) + ', ' + c.lon.toFixed(4)
+      : 'no coordinates';
+
+    return [
+      '<div class="case-detail">',
+
+      note
+        ? '  <p class="case-note">' + UIModule.escapeHtml(note) + '</p>'
+        : '  <p class="case-note case-note--empty">No description given.</p>',
+
+      '  <p class="case-coords">' + UIModule.escapeHtml(coords) + '</p>',
+
+      '  <div class="thread" id="thread-' + UIModule.escapeHtml(c.id) + '">',
+      '    <p class="thread__empty">No messages yet.</p>',
+      '  </div>',
+
+      '  <div class="thread-input">',
+      '    <input class="big-input big-input--compact" data-msg-input="' + UIModule.escapeHtml(c.id) + '"',
+      '           placeholder="Ask the reporter…" maxlength="500">',
+      '    <button type="button" class="big-btn big-btn--soft big-btn--square" data-send="' + UIModule.escapeHtml(c.id) + '"',
+      '            aria-label="Send">',
+      '      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">',
+      '        <line x1="22" y1="2" x2="11" y2="13"></line>',
+      '        <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>',
+      '      </svg>',
+      '    </button>',
+      '  </div>',
+
+      '</div>'
+    ].join('');
+  }
+
+  function toggleExpanded(id) {
+    if (expanded.has(id)) expanded.delete(id);
+    else expanded.add(id);
+    renderCases();
+  }
+
+  // ------------------------------------------------------------- decisions
+
+  function chooseSeverity(id) {
+    pending[id] = 'accept';
+    expanded.add(id);
+    renderCases();
+  }
+
+  function chooseDecline(id) {
+    pending[id] = 'decline';
+    expanded.add(id);
+    renderCases();
+  }
+
+  async function commitAccept(id, severity) {
+    if (deciding.has(id)) return;
+    deciding.add(id);
+
+    try {
+      const result = await CaseModule.decide(id, { kind: 'accept', severity });
+
+      if (!result.ok) {
+        UIModule.showToast(result.message, 'error');
+        return;
+      }
+
+      pending[id] = null;
+      UIModule.showToast('Accepted · ' + CaseModule.severityLabel(severity), 'success');
+      await loadCases();
+    } catch (err) {
+      console.error('Accept failed:', err);
+      UIModule.showToast('Could not save: ' + err.message, 'error');
+    } finally {
+      deciding.delete(id);
+    }
+  }
+
+  async function commitDecline(id, reason) {
+    if (deciding.has(id)) return;
+    deciding.add(id);
+
+    try {
+      const result = await CaseModule.decide(id, { kind: 'decline', reason });
+
+      if (!result.ok) {
+        UIModule.showToast(result.message, 'error');
+        return;
+      }
+
+      pending[id] = null;
+      UIModule.showToast('Declined', 'info');
+      await loadCases();
+    } catch (err) {
+      console.error('Decline failed:', err);
+      UIModule.showToast('Could not save: ' + err.message, 'error');
+    } finally {
+      deciding.delete(id);
+    }
+  }
+
+  // ------------------------------------------------------------ conversation
+
+  async function loadThread(id) {
+    const host = document.getElementById('thread-' + id);
+    if (!host) return;
+
+    let list = [];
+    try {
+      list = await CaseModule.messages(id);
+    } catch (err) {
+      console.warn('Could not load thread:', err);
+      return;
+    }
+
+    if (!list.length) {
+      host.innerHTML = '<p class="thread__empty">No messages yet.</p>';
+      return;
+    }
+
+    const me = Auth.current();
+
+    host.innerHTML = list.map(m => {
+      const mine = me && m.authorName === me.username;
+      return [
+        '<div class="bubble' + (mine ? ' bubble--me' : '') + '">',
+        '  <span class="bubble__who">' + UIModule.escapeHtml(m.authorName) + '</span>',
+        '  <span class="bubble__text">' + UIModule.escapeHtml(m.text) + '</span>',
+        '  <span class="bubble__when">' + UIModule.escapeHtml(timeAgo(m.createdAt)) + '</span>',
+        '</div>'
+      ].join('');
+    }).join('');
+
+    host.scrollTop = host.scrollHeight;
+  }
+
+  async function sendMessage(id) {
+    const input = document.querySelector('[data-msg-input="' + id + '"]');
+    if (!input) return;
+
+    const text = input.value.trim();
+    if (!text) return;
+
+    input.value = '';
+    input.disabled = true;
+
+    try {
+      const result = await CaseModule.sendMessage(id, text);
+      if (!result.ok) {
+        UIModule.showToast(result.message, 'error');
+        input.value = text;
+        return;
+      }
+      await loadThread(id);
+    } catch (err) {
+      UIModule.showToast('Could not send', 'error');
+      input.value = text;
+    } finally {
+      input.disabled = false;
+      input.focus();
+    }
+  }
+
+  // ------------------------------------------------------------- identify
+
+  function bindIdentify() {
+    const codeInput = document.getElementById('id-code');
+
+    document.getElementById('btn-id-code')?.addEventListener('click', () => {
+      showIdentification(IdentifyModule.byCode(codeInput ? codeInput.value : ''));
+    });
+
+    codeInput?.addEventListener('keydown', e => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        showIdentification(IdentifyModule.byCode(codeInput.value));
+      }
+    });
+
+    document.getElementById('btn-id-here')?.addEventListener('click', async () => {
+      UIModule.showLoading('Finding you…');
+      try {
+        const pos = await LocationModule.getCurrentPosition();
+        showIdentification(IdentifyModule.byPosition(pos.lat, pos.lon));
+      } catch (err) {
+        UIModule.showToast('No GPS fix — tap it on the map instead', 'warning');
+      } finally {
+        UIModule.hideLoading();
+      }
+    });
+
+    document.getElementById('btn-id-map')?.addEventListener('click', openIdMap);
+    document.getElementById('btn-id-map-cancel')?.addEventListener('click', closeIdMap);
+  }
+
+  function showIdentification(result) {
+    const host = document.getElementById('id-result');
+    if (!host) return;
+
+    host.hidden = false;
+
+    const verdict = IdentifyModule.VERDICTS[result.verdict] || IdentifyModule.VERDICTS.unknown;
+    const advice = IdentifyModule.recommendation(result);
+
+    // The headline is the answer. Everything else is supporting detail, and it
+    // is deliberately smaller so the answer reads first.
+    let headline;
+    if (result.found && result.kind === 'gear') {
+      headline = result.gear.ownerName;
+    } else if (result.found && result.best) {
+      headline = result.best.record.ownerName || result.best.record.owner || 'Registered';
+    } else {
+      headline = verdict.label;
+    }
+
+    const rows = [];
+
+    if (result.code) {
+      rows.push(['Code', result.code]);
+    }
+
+    if (result.found && result.best) {
+      const r = result.best.record;
+      rows.push(['Distance', Math.round(result.best.distance) + ' m']);
+      if (r.label) rows.push(['Name', r.label]);
+      if (r.validUntil) rows.push(['Valid until', new Date(r.validUntil).toLocaleDateString()]);
+    }
+
+    if (result.found && result.gear && !result.best) {
+      const g = result.gear;
+      if (Array.isArray(g.span)) {
+        rows.push(['Length', Math.round(Shore.spanLength(g.span[0], g.span[1])) + ' m']);
+      }
+      if (g.validUntil) rows.push(['Valid until', new Date(g.validUntil).toLocaleDateString()]);
+    }
+
+    host.dataset.tone = verdict.tone;
+    host.innerHTML = [
+      '<div class="id-result__head">',
+      '  <span class="id-result__verdict">' + UIModule.escapeHtml(verdict.label) + '</span>',
+      '  <span class="id-result__owner">' + UIModule.escapeHtml(headline) + '</span>',
+      '</div>',
+      '<p class="id-result__why">' + UIModule.escapeHtml(result.reason || '') + '</p>',
+      rows.length
+        ? '<dl class="id-rows">' + rows.map(([k, v]) =>
+            '<div><dt>' + UIModule.escapeHtml(k) + '</dt><dd>' + UIModule.escapeHtml(String(v)) + '</dd></div>'
+          ).join('') + '</dl>'
+        : '',
+      '<div class="id-result__advice" data-tone="' + advice.tone + '">' + UIModule.escapeHtml(advice.label) + '</div>',
+      result.found && result.best && Number.isFinite(result.best.record.lat)
+        ? '<button type="button" class="big-btn big-btn--soft" id="btn-id-show">Show it on the map</button>'
+        : ''
+    ].join('');
+
+    document.getElementById('btn-id-show')?.addEventListener('click', () => {
+      const r = result.best ? result.best.record : result.gear;
+      if (!r) return;
+      const lat = Array.isArray(r.span) ? r.span[0][0] : r.lat;
+      const lon = Array.isArray(r.span) ? r.span[0][1] : r.lon;
+      if (Number.isFinite(lat)) openIdMapAt(lat, lon);
     });
   }
 
-  function lookUpGear(rawCode) {
-    const host = document.getElementById('gear-result');
+  function renderIdList() {
+    const host = document.getElementById('id-list');
+    const none = document.getElementById('id-none');
+    const total = document.getElementById('id-total');
     if (!host) return;
 
-    const code = String(rawCode || '').trim();
-    if (!code) {
-      host.hidden = true;
-      return;
-    }
+    const list = GearModule.activeOnly();
+    if (total) total.textContent = String(list.length);
 
-    const found = GearModule.findByCode(code);
-    host.hidden = false;
-
-    if (!found) {
-      host.dataset.state = 'unknown';
-      host.innerHTML = [
-        '<span class="gear-result__headline">Not registered</span>',
-        '<span class="gear-result__sub">No net with the code ' + UIModule.escapeHtml(code) + '.',
-        ' Treat it as unregistered gear.</span>'
-      ].join('');
-      return;
-    }
-
-    const expired = GearModule.isExpired(found);
-    const metres = Array.isArray(found.span)
-      ? Math.round(Shore.spanLength(found.span[0], found.span[1]))
-      : null;
-
-    host.dataset.state = expired ? 'expired' : 'ok';
-    host.innerHTML = [
-      '<span class="gear-result__headline">',
-      UIModule.escapeHtml(found.ownerName),
-      expired ? ' · expired' : ' · valid',
-      '</span>',
-      '<span class="gear-result__sub">',
-      UIModule.escapeHtml(found.label),
-      metres ? ' · ' + metres + ' m' : '',
-      found.validUntil ? ' · until ' + new Date(found.validUntil).toLocaleDateString() : '',
-      '</span>'
-    ].join('');
-
-    // Put it on the map: seeing the line is faster than reading coordinates.
-    if (Array.isArray(found.span) && found.span.length === 2) {
-      MapModule.focusOn(found.span[0][0], found.span[0][1], 15);
-    } else if (Number.isFinite(found.lat) && Number.isFinite(found.lon)) {
-      MapModule.focusOn(found.lat, found.lon, 16);
-    }
-  }
-
-  function renderGearList() {
-    const host = document.getElementById('gear-table');
-    const none = document.getElementById('gear-none');
-    const total = document.getElementById('gear-total');
-    if (!host) return;
-
-    gear = GearModule.activeOnly();
-
-    if (total) total.textContent = String(gear.length);
-
-    if (!gear.length) {
+    if (!list.length) {
       host.innerHTML = '';
       if (none) none.hidden = false;
       return;
@@ -340,65 +622,98 @@ const Patrol = (function() {
 
     if (none) none.hidden = true;
 
-    host.innerHTML = gear.map(item => {
-      const metres = Array.isArray(item.span)
-        ? Math.round(Shore.spanLength(item.span[0], item.span[1]))
+    host.innerHTML = list.map(g => {
+      const metres = Array.isArray(g.span)
+        ? Math.round(Shore.spanLength(g.span[0], g.span[1]))
         : null;
 
       return [
-        '<article class="gear-item" data-gear="' + UIModule.escapeHtml(item.id) + '">',
-        '  <div class="gear-item__code">',
-        '    <span class="gear-item__code-label">Code</span>',
-        '    <span class="gear-item__code-value">' + UIModule.escapeHtml(item.code) + '</span>',
-        '  </div>',
-        '  <div class="gear-item__body">',
-        '    <span class="gear-item__label">' + UIModule.escapeHtml(item.ownerName) + '</span>',
-        '    <span class="gear-item__meta">',
-        UIModule.escapeHtml(item.label),
-        metres ? ' · ' + metres + ' m' : '',
-        '    </span>',
-        '  </div>',
-        '  <button type="button" class="btn btn--ghost btn--sm" data-locate="' +
-          UIModule.escapeHtml(item.id) + '">Show</button>',
-        '</article>'
+        '<button type="button" class="id-row" data-id-gear="' + UIModule.escapeHtml(g.code) + '">',
+        '  <span class="id-row__code">' + UIModule.escapeHtml(g.code) + '</span>',
+        '  <span class="id-row__owner">' + UIModule.escapeHtml(g.ownerName) + '</span>',
+        '  <span class="id-row__meta">' + UIModule.escapeHtml(g.label) +
+          (metres ? ' · ' + metres + ' m' : '') + '</span>',
+        '</button>'
       ].join('');
     }).join('');
 
-    host.querySelectorAll('[data-locate]').forEach(btn => {
+    host.querySelectorAll('[data-id-gear]').forEach(btn => {
       btn.addEventListener('click', () => {
-        const item = GearModule.get(btn.dataset.locate);
-        if (!item) return;
-
-        // Jump to the map tab, then to the net.
-        document.querySelector('[data-tab="map"]')?.click();
-
-        setTimeout(() => {
-          if (Array.isArray(item.span) && item.span.length === 2) {
-            MapModule.focusOn(item.span[0][0], item.span[0][1], 15);
-          } else if (Number.isFinite(item.lat)) {
-            MapModule.focusOn(item.lat, item.lon, 16);
-          }
-        }, 180);
+        showIdentification(IdentifyModule.byCode(btn.dataset.idGear));
+        document.querySelector('.screen__body').scrollTop = 0;
       });
     });
   }
 
-  // ---------------------------------------------------------------- status
+  // ------------------------------------------------------------- id map
 
-  function changeStatus(point) {
-    UIModule.showStatusModal(point, async (newStatus, comment) => {
-      UIModule.showLoading('Updating…');
-      try {
-        await StoreModule.updateSightingStatusUnified(point.id, newStatus, comment, 'patrol');
-        UIModule.showToast('Status → ' + StatusModule.getStatusLabel(newStatus), 'success');
-        await loadCases();
-      } catch (err) {
-        console.error('Status update failed:', err);
-        UIModule.showToast('Could not update: ' + err.message, 'error');
-      } finally {
-        UIModule.hideLoading();
+  function openIdMap() {
+    openIdMapAt(CONFIG.MAP_CENTER[0], CONFIG.MAP_CENTER[1]);
+  }
+
+  function openIdMapAt(lat, lon) {
+    const modal = document.getElementById('id-map-modal');
+    if (!modal) return;
+
+    modal.hidden = false;
+    void modal.offsetHeight;
+    modal.classList.add('sheet--visible');
+
+    setTimeout(() => {
+      if (!idMap) {
+        idMap = L.map('id-map').setView([lat, lon], 15);
+        L.tileLayer(CONFIG.TILE_URL, {
+          maxZoom: 19,
+          attribution: CONFIG.TILE_ATTRIBUTION
+        }).addTo(idMap);
+
+        if (typeof Shore !== 'undefined') {
+          Shore.permittedAreas().forEach(area => {
+            const pts = area.kind === 'circle'
+              ? circlePoints(area)
+              : (area.coords || []).map(p => [p[0], p[1]]);
+            if (pts.length) {
+              L.polygon(pts, {
+                color: '#2FA36B', weight: 2, opacity: 0.5, dashArray: '6 6',
+                fillColor: '#2FA36B', fillOpacity: 0.1, interactive: false
+              }).addTo(idMap);
+            }
+          });
+        }
+
+        idMap.on('click', e => {
+          if (idMarker) idMarker.setLatLng(e.latlng);
+          else idMarker = L.circleMarker(e.latlng, {
+            radius: 9, color: '#fff', weight: 3, fillColor: '#1FA6D8', fillOpacity: 1
+          }).addTo(idMap);
+
+          showIdentification(IdentifyModule.byPosition(e.latlng.lat, e.latlng.lng));
+          closeIdMap();
+        });
+      } else {
+        idMap.setView([lat, lon], 15);
+        idMap.invalidateSize();
       }
-    });
+    }, 60);
+  }
+
+  function circlePoints(shape) {
+    const R = 6371000;
+    const dLat = (shape.radius / R) * 180 / Math.PI;
+    const dLon = (shape.radius / (R * Math.cos(shape.lat * Math.PI / 180))) * 180 / Math.PI;
+    const pts = [];
+    for (let i = 0; i < 64; i++) {
+      const a = (i / 64) * 2 * Math.PI;
+      pts.push([shape.lat + dLat * Math.cos(a), shape.lon + dLon * Math.sin(a)]);
+    }
+    return pts;
+  }
+
+  function closeIdMap() {
+    const modal = document.getElementById('id-map-modal');
+    if (!modal) return;
+    modal.classList.remove('sheet--visible');
+    modal.hidden = true;
   }
 
   return { init, reload: loadCases };

@@ -1,88 +1,65 @@
 ﻿<!DOCTYPE html>
-<html lang="en">
+<html lang="en" data-theme="dark">
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#0B2A4A">
+  <meta name="theme-color" content="#07131F">
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-  <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-  <title>NetSight — Water Patrol</title>
-
-  <script>
-  (function () {
-    var BUILD = '2026.11.28.4';
-    var KEY = 'netsight_build';
-    var seen = null;
-    try { seen = localStorage.getItem(KEY); } catch (e) {}
-
-    var stale = seen !== BUILD;
-    try { localStorage.setItem(KEY, BUILD); } catch (e) {}
-
-    var tasks = [];
-
-    // Service workers are gone — unregister any left behind by an older build.
-    if ('serviceWorker' in navigator && navigator.serviceWorker.getRegistrations) {
-      tasks.push(navigator.serviceWorker.getRegistrations().then(function (regs) {
-        return Promise.all(regs.map(function (r) { return r.unregister(); }));
-      }).then(function (r) { return r.length; }).catch(function () { return 0; }));
-    }
-
-    if (window.caches && caches.keys) {
-      tasks.push(caches.keys().then(function (keys) {
-        return Promise.all(keys.map(function (k) { return caches.delete(k); }));
-      }).then(function () { return 0; }).catch(function () { return 0; }));
-    }
-
-    Promise.all(tasks).then(function (counts) {
-      var removed = counts.some(function (n) { return n > 0; });
-      if (stale || removed) location.reload();
-    });
-  })();
-  </script>
-
+  <title>Water Patrol · NetSight</title>
   <link rel="manifest" href="manifest.webmanifest">
   <link rel="icon" href="assets/netsight-logo.svg" type="image/svg+xml">
-  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
-        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
-  <link rel="stylesheet" href="css/style.css?v=2026.11.28.4">
-
-  <script src="js/config.js?v=2026.11.28.4"></script>
-  <script src="js/theme.js?v=2026.11.28.4"></script>
+  <link rel="stylesheet" href="css/style.css?v=2026.11.29.1">
+  <script>
+    // Bump with CONFIG.BUILD. Clears anything a previous version left behind,
+    // then reloads once — a stale cached script is the classic way this app
+    // "stops working" after a deploy.
+    var BUILD = '2026.11.29.1';
+    (function () {
+      try {
+        var seen = localStorage.getItem('netsight_build');
+        if (seen !== BUILD) {
+          localStorage.setItem('netsight_build', BUILD);
+          if ('caches' in window) {
+            caches.keys().then(function (keys) {
+              return Promise.all(keys.map(function (k) { return caches.delete(k); }));
+            }).then(function () {
+              if (navigator.serviceWorker) {
+                navigator.serviceWorker.getRegistrations().then(function (rs) {
+                  rs.forEach(function (r) { r.unregister(); });
+                });
+              }
+              if (seen) location.reload();
+            });
+          }
+        }
+      } catch (e) { /* private mode — nothing to clear */ }
+    })();
+  </script>
 </head>
-<body data-page="patrol">
+<body>
 
-  <div id="loading-overlay" class="loading-overlay" hidden>
-    <div class="loading-overlay__card">
-      <div class="spinner"></div>
-      <p id="loading-message">Loading cases…</p>
-    </div>
-  </div>
   <div id="modal-overlay" class="modal-overlay" hidden></div>
   <div id="toast-container" class="toast-container"></div>
+  <div id="loading" class="loading" hidden><span class="loading__text" id="loading-message">Loading…</span></div>
 
-  <div class="screen screen--active">
+  <div class="screen screen--active patrol">
 
     <header class="app-bar">
       <div class="app-bar__left">
-        <img class="app-bar__logo" src="assets/netsight-logo.svg" alt="" width="26" height="26">
+        <img class="app-bar__logo" src="assets/netsight-logo.svg" alt="" width="28" height="28">
         <div class="app-bar__titles">
           <h1 class="app-bar__title">Water Patrol</h1>
-          <span class="app-bar__sub" id="patrol-sub">0 cases</span>
+          <span class="app-bar__sub" id="patrol-sub">Loading…</span>
         </div>
       </div>
       <div class="app-bar__right">
-        <span class="role-chip">
-          <span class="role-chip__dot"></span>
-          <span data-user-name>—</span>
-        </span>
-        <button type="button" class="icon-btn" data-theme-toggle aria-label="Theme">
+        <button type="button" class="icon-btn icon-btn--lg" data-theme-toggle aria-label="Theme">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" aria-hidden="true">
             <circle cx="12" cy="12" r="4"></circle>
             <path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"></path>
           </svg>
         </button>
-        <button type="button" class="icon-btn" data-signout aria-label="Sign out" title="Sign out">
+        <button type="button" class="icon-btn icon-btn--lg" data-signout aria-label="Sign out">
           <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
             <path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"></path>
             <polyline points="16 17 21 12 16 7"></polyline>
@@ -92,214 +69,143 @@
       </div>
     </header>
 
-    <!-- tabs -->
-    <!-- tabs -->
-    <div class="admin-tabs segmented segmented--full" role="tablist">
-      <button type="button" class="segment is-active" data-tab="map" role="tab">Map</button>
-      <button type="button" class="segment" data-tab="cases" role="tab">Cases</button>
-      <button type="button" class="segment" data-tab="gear" role="tab">Nets</button>
-      <button type="button" class="segment" data-tab="settings" role="tab">Settings</button>
+    <!-- Two tabs. Not four. -->
+    <div class="patrol-tabs" role="tablist">
+      <button type="button" class="patrol-tab is-active" data-tab="cases" role="tab">
+        <span class="patrol-tab__count" id="tab-count">0</span>
+        <span class="patrol-tab__label">Cases</span>
+      </button>
+      <button type="button" class="patrol-tab" data-tab="identify" role="tab">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true">
+          <circle cx="11" cy="11" r="7"></circle>
+          <line x1="16" y1="16" x2="21" y2="21"></line>
+        </svg>
+        <span class="patrol-tab__label">Identify</span>
+      </button>
     </div>
 
     <div class="screen__body">
 
-      <!-- ===== MAP ===== -->
-      <section class="patrol-pane is-active" data-pane="map">
-        <div class="patrol-map-wrap">
-          <div id="patrol-map" class="patrol-map"></div>
+      <!-- ================= CASES ================= -->
+      <section class="patrol-pane is-active" data-pane="cases">
 
-          <div class="segmented segmented--floating" role="group" aria-label="Filter cases">
-            <button type="button" class="segment is-active" data-filter="all">All</button>
-            <button type="button" class="segment" data-filter="new">New</button>
-            <button type="button" class="segment" data-filter="reported">Reported</button>
-            <button type="button" class="segment" data-filter="checked">Checked</button>
-            <button type="button" class="segment" data-filter="resolved">Resolved</button>
-          </div>
+        <div class="big-filter" role="group" aria-label="Filter cases">
+          <button type="button" class="big-chip is-active" data-filter="open">Needs action</button>
+          <button type="button" class="big-chip" data-filter="all">All</button>
+          <button type="button" class="big-chip" data-filter="declined">Declined</button>
         </div>
 
-        <div class="stats">
-          <div class="stat"><span class="stat__value" id="p-total">0</span><span class="stat__label">Total</span></div>
-          <div class="stat stat--danger"><span class="stat__value" id="p-reported">0</span><span class="stat__label">Reported</span></div>
-          <div class="stat stat--warn"><span class="stat__value" id="p-new">0</span><span class="stat__label">New</span></div>
-          <div class="stat stat--ok"><span class="stat__value" id="p-registered">0</span><span class="stat__label">Registered</span></div>
+        <div id="case-list" class="case-list"></div>
+
+        <div id="case-empty" class="empty-state empty-state--big" hidden>
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" width="44" height="44">
+            <path d="M20 6L9 17l-5-5"></path>
+          </svg>
+          <p>Nothing waiting</p>
+          <p class="empty-state__hint">Every report has been dealt with.</p>
         </div>
+
+      </section>
+
+      <!-- ================= IDENTIFY ================= -->
+      <section class="patrol-pane" data-pane="identify">
 
         <div class="card">
           <header class="card__head">
-            <h2 class="card__title">What the map is showing</h2>
+            <h2 class="card__title">What is it?</h2>
           </header>
-          <div class="card__body stack-sm">
+          <div class="card__body stack">
+
             <p class="hint">
-              Pins are reports. Green lines are nets someone registered, so a net
-              that looks abandoned may simply be someone's legal gear. Dashed
-              green is permitted water; the red line is the 50 m limit.
-            </p>
-          </div>
-        </div>
-      </section>
-
-      <!-- ===== CASES ===== -->
-      <section class="patrol-pane" data-pane="cases">
-        <div class="inspector-toolbar inspector-toolbar--inline">
-          <div class="segmented" role="group" aria-label="Status filters">
-            <button type="button" class="filter-chip filter-chip--active" data-case-filter="all">All</button>
-            <button type="button" class="filter-chip" data-case-filter="reported">Reported</button>
-            <button type="button" class="filter-chip" data-case-filter="new">New</button>
-            <button type="button" class="filter-chip" data-case-filter="checked">Checked</button>
-            <button type="button" class="filter-chip" data-case-filter="resolved">Resolved</button>
-          </div>
-          <label class="select-wrapper">
-            <span class="visually-hidden">Sort cases</span>
-            <select id="patrol-sort" class="input form-select--sm">
-              <option value="priority">Priority</option>
-              <option value="created_desc">Newest first</option>
-              <option value="created_asc">Oldest first</option>
-            </select>
-          </label>
-        </div>
-
-        <div class="table-container table-container--inline">
-          <table class="cases-table">
-            <thead>
-              <tr>
-                <th scope="col">Type</th>
-                <th scope="col">Status</th>
-                <th scope="col">Belongs to</th>
-                <th scope="col">Length</th>
-                <th scope="col">When</th>
-                <th scope="col">Actions</th>
-              </tr>
-            </thead>
-            <tbody id="patrol-tbody"></tbody>
-          </table>
-
-          <div id="patrol-empty" class="empty-state" hidden>
-            <p>No cases match this filter</p>
-          </div>
-        </div>
-      </section>
-
-      <!-- ===== NETS ===== -->
-      <section class="patrol-pane" data-pane="gear">
-        <div class="card">
-          <header class="card__head">
-            <h2 class="card__title">Check a net</h2>
-          </header>
-          <div class="card__body stack-sm">
-            <p class="hint">
-              Read the code off the buoy. If it is registered you get the owner,
-              the line it was set on, and whether it is still valid.
+              Read the code off the buoy, or stand near it and use your position.
+              Either way you find out who it belongs to without going closer.
             </p>
 
-            <div class="row row--2">
-              <input class="input" id="gear-lookup" type="text" placeholder="NS-XXXXXX"
+            <label class="big-field">
+              <span class="big-field__label">Code on the buoy</span>
+              <input class="big-input" id="id-code" type="text" placeholder="NS-XXXXXX"
                      spellcheck="false" autocomplete="off" autocapitalize="characters">
-              <button type="button" class="btn btn--soft" id="btn-gear-lookup">Look up</button>
-            </div>
+            </label>
 
-            <div id="gear-result" class="gear-result" hidden></div>
+            <button type="button" class="big-btn big-btn--primary" id="btn-id-code">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+                <circle cx="11" cy="11" r="7"></circle>
+                <line x1="16" y1="16" x2="21" y2="21"></line>
+              </svg>
+              Look up this code
+            </button>
+
+            <div class="big-or"><span>or</span></div>
+
+            <button type="button" class="big-btn big-btn--soft" id="btn-id-here">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+                <circle cx="12" cy="12" r="3"></circle>
+                <path d="M12 2v3M12 19v3M2 12h3M19 12h3"></path>
+              </svg>
+              Identify what is here
+            </button>
+
+            <button type="button" class="big-btn big-btn--ghost" id="btn-id-map">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+                <polygon points="1 6 1 22 8 18 16 22 23 18 23 2 16 6 8 2 1 6"></polygon>
+              </svg>
+              Tap it on the map
+            </button>
+
           </div>
         </div>
 
+        <div id="id-result" class="id-result" hidden></div>
+
         <div class="card">
           <header class="card__head">
-            <h2 class="card__title">Registered in this water</h2>
-            <span class="tag" id="gear-total">0</span>
+            <h2 class="card__title">Registered here</h2>
+            <span class="tag" id="id-total">0</span>
           </header>
           <div class="card__body stack-sm">
-            <div id="gear-table" class="gear-list"></div>
-            <div id="gear-none" class="empty-state" hidden>
-              <p>No nets registered yet</p>
-              <p class="hint">Owners register their own from My nets on the map page.</p>
+            <div id="id-list" class="id-list"></div>
+            <div id="id-none" class="empty-state" hidden>
+              <p>No nets registered</p>
             </div>
           </div>
         </div>
-      </section>
 
-      <!-- ===== SETTINGS ===== -->
-      <section class="patrol-pane" data-pane="settings">
-        <div class="card">
-          <header class="card__head">
-            <h2 class="card__title">Signed in</h2>
-          </header>
-          <div class="card__body stack-sm">
-            <div class="ai-status-row">
-              <span class="ai-status-row__dot" data-state="ready"></span>
-              <div class="ai-status-row__text">
-                <span class="ai-status-row__title" data-role-label>Patrol</span>
-                <span class="ai-status-row__sub">Case access · status changes</span>
-              </div>
-            </div>
-            <button type="button" class="btn btn--ghost btn--block" data-signout>Sign out</button>
-          </div>
-        </div>
-
-        <div class="card">
-          <header class="card__head">
-            <h2 class="card__title">What this role can do</h2>
-          </header>
-          <div class="card__body">
-            <ul class="capabilities">
-              <li>See every reported case on the map</li>
-              <li>Open a case and read the photo, coordinates and note</li>
-              <li>Move a case along: new → reported → checked → resolved</li>
-              <li>Mark a report as a false alarm</li>
-              <li>Register a net you own, with its ID</li>
-              <li class="is-off">Delete points (administrator only)</li>
-            </ul>
-          </div>
-        </div>
       </section>
 
     </div>
   </div>
 
+  <!-- ============ IDENTIFY ON MAP ============ -->
+  <div id="id-map-modal" class="sheet" hidden>
+    <div class="sheet__panel">
+      <header class="sheet__head">
+        <h2 class="card__title">Where is it?</h2>
+        <p class="hint">Tap the water where the thing is floating</p>
+      </header>
+      <div id="id-map" class="sheet__map"></div>
+      <div class="sheet__foot">
+        <button type="button" class="big-btn big-btn--ghost" id="btn-id-map-cancel">Cancel</button>
+      </div>
+    </div>
+  </div>
+
   <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
-  <script src="js/status.js?v=2026.11.28.4"></script>
-  <script src="js/devices.js?v=2026.11.28.4"></script>
-  <script src="js/gear.js?v=2026.11.28.4"></script>
-  <script src="js/shore.js?v=2026.11.28.4"></script>
-  <script src="js/location.js?v=2026.11.28.4"></script>
-  <script src="js/registry.js?v=2026.11.28.4"></script>
-  <script src="js/map.js?v=2026.11.28.4"></script>
-  <script src="js/ui.js?v=2026.11.28.4"></script>
-  <script src="js/store.js?v=2026.11.28.4"></script>
+  <script src="js/config.js?v=2026.11.29.1"></script>
+  <script src="js/theme.js?v=2026.11.29.1"></script>
+  <script src="js/status.js?v=2026.11.29.1"></script>
+  <script src="js/devices.js?v=2026.11.29.1"></script>
+  <script src="js/gear.js?v=2026.11.29.1"></script>
+  <script src="js/cases.js?v=2026.11.29.1"></script>
+  <script src="js/identify.js?v=2026.11.29.1"></script>
+  <script src="js/shore.js?v=2026.11.29.1"></script>
+  <script src="js/location.js?v=2026.11.29.1"></script>
+  <script src="js/registry.js?v=2026.11.29.1"></script>
+  <script src="js/map.js?v=2026.11.29.1"></script>
+  <script src="js/ui.js?v=2026.11.29.1"></script>
+  <script src="js/store.js?v=2026.11.29.1"></script>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.js"></script>
-
-  <script src="js/auth.js?v=2026.11.28.4"></script>
-  <script src="js/patrol.js?v=2026.11.28.4"></script>
+  <script src="js/auth.js?v=2026.11.29.1"></script>
+  <script src="js/patrol.js?v=2026.11.29.1"></script>
 </body>
 </html>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-

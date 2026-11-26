@@ -99,8 +99,9 @@ See [docs/SETUP.md](docs/SETUP.md) for the ten-minute setup.
   say whether you are inside the permitted water, with a button to recentre.
 * **Registered nets** — fishermen register a net and get a code to write on the
   buoy. A report anywhere along that line is matched to its owner.
-* **Water Patrol** — a map of every case plus a sortable list, a code lookup for
-  nets found in the water, and status changes. No delete — that is the admin.
+* **Water Patrol** — built for cold hands: two tabs, every control at least 56 px
+  tall, decisions inline on the card. Accept with a severity, or decline with a
+  reason. Identify gear without driving to it.
 * **Admin panel** — points (delete one, bulk, export, wipe), the buoy fleet, the
   registered nets, the drawn shore, and **Users**.
 * **Modern shell** — light/dark/system theme, glass app bar, bottom tab bar,
@@ -215,6 +216,68 @@ There is no "report it anyway". The rule is the rule.
 
 Every report takes an optional photo and a description.
 
+## Water Patrol
+
+`patrol.html` — two tabs, not four, and every control is at least 56 px tall.
+That is not decoration: in November a wet thumb misses a 32 px button, and the
+person holding the phone is standing in a boat.
+
+### Cases
+
+One card per report, with two buttons: **Accept** and **Not gear**.
+
+Accepting asks how urgent it is — **Critical / High / Medium / Low** — and moves
+the case to `checked`. Four levels, because a scale nobody can remember in the
+rain is worse than a coarse one everybody agrees on.
+
+Declining asks why, and the reasons are the ones that actually happen:
+
+| Reason | When |
+|---|---|
+| Not fishing gear | A bottle, rubbish, a branch |
+| Registered and legal | The owner has it registered |
+| Already gone | Nothing there when you looked |
+| Already reported | Same thing, another report |
+| Outside our water | Someone else looks after it |
+
+Declining is not a dead end — it closes the case with a reason, so the list stops
+filling with bottles. Tap a card to read the description and reply to the
+reporter.
+
+### Identify
+
+The point of the panel. You see something floating 200 m away. You find out what
+it is without going closer, three ways:
+
+**By code.** Read `NS-7K3M9P` off the buoy and type it in. Exact — the code is
+printed on the gear, so there is nothing to infer.
+
+**By position.** Stand near it and press *Identify what is here*, or tap it on the
+map. Everything registered or reporting within 500 m comes back, nearest first,
+with how far it is from where it was set.
+
+**By device.** A buoy that is itself reporting is matched on its own coordinates.
+That is not an inference — the device is saying where it is.
+
+The answer always carries a confidence band, because a position match is
+evidence, not proof: two nets can lie in the same bay.
+
+| Distance | Meaning |
+|---|---|
+| within 15 m | at its registered position |
+| within 50 m | close enough to be the same gear |
+| within 200 m | probably it, but it has moved |
+| further | nothing registered — it is a case |
+
+And a recommendation, so nobody has to reason about it with wet hands: *Legal
+gear — leave it*, *Contact the owner*, or *Collect it*.
+
+### What is not here
+
+No map tab. The cases are the work; a map you have to pan is not. No settings
+tab — the theme and sign-out are in the header. No delete — that is the admin's
+job, and it is irreversible.
+
 ## Registered nets
 
 A fisherman registers a net before setting it, from **My nets** in the app:
@@ -264,7 +327,7 @@ Deletion is immediate and permanent.
 ```
 login.html                 Sign in / create account — the first screen
 index.html                 User app (map, report, settings)
-patrol.html                Water Patrol (map, cases, nets, settings)
+patrol.html                Water Patrol (cases, identify) — two tabs, big buttons
 admin.html                 Admin panel (points, devices, nets, users, shore)
 vercel.json                Vercel function config
 docs/SETUP.md              Ten-minute database setup — start here
@@ -282,21 +345,24 @@ js/
   location.js              Geolocation watch, manual point, Haversine
   registry.js              registry.csv parsing + matching
   gear.js                  Registered nets: codes, owner, line matching
+  cases.js                 Severity, accept/decline, the conversation
+  identify.js              Remote identification: by code, position or device
   map.js                   Leaflet map, pins, filters, shore overlay, pickers
   ui.js                    Screens, sheets, toasts, verdict card, detail view
   store.js                 Sightings CRUD (Supabase, localStorage fallback)
   auth.js                  Accounts: Supabase Auth or local, roles, guards
   shore.js                 Hand-drawn shoreline, 50 m offset, geofence
   devices.js               Buoy fleet: telemetry, alerts
-  patrol.js                Water Patrol: map, cases, net lookup, status changes
+  patrol.js                Water Patrol: cases, decisions, identify
   admin.js                 Points, devices, nets, shore drawing, accounts
   app.js                   Wiring and user flows
 data/registry.csv          Registered gear
 supabase/migrations/       Postgres schema — run 003 to go live
 ```
 
-Load order: `config → theme → status → devices → gear → shore → location →
-registry → map → ui → store → supabase-js → auth → page module`.
+Load order: `config → theme → status → devices → gear → cases → identify →
+shore → location → registry → map → ui → store → supabase-js → auth →
+page module`.
 
 `shore.js` and `devices.js` come before `map.js` because the map draws from
 them. `auth.js` comes after `supabase-js` because it builds the client.
@@ -349,6 +415,10 @@ FileReader, fetch, `color-mix()` (graceful fallback), CSS Grid.
 ## License
 
 MIT — prototype for demonstration purposes.
+
+
+
+
 
 
 

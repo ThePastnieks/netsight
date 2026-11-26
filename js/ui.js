@@ -1,4 +1,6 @@
 ﻿// NetSight UI Module
+
+// NetSight UI Module
 // Forms, modals, toasts, screen navigation
 
 const UIModule = (function() {
@@ -389,24 +391,40 @@ const UIModule = (function() {
   }
 
   // Detail view
+  // What a report looks like when you open it. No confidence figure: nothing
+  // produces one any more. What matters is what it is, whether somebody owns it,
+  // and what the patrol has asked.
   function showDetailView(sighting) {
     const statusModule = window.StatusModule;
     const timeStr = new Date(sighting.created_at).toLocaleString();
-    const confidencePct = Math.round((sighting.confidence || 0) * 100);
-    const pinColor = statusModule.pinColor(sighting);
-    const colorHex = CONFIG.COLORS[pinColor] || CONFIG.COLORS.orange;
     const statusLabel = statusModule.getStatusLabel(sighting.status);
-    const registryText = sighting.registry_match ? 'Registered' : 'Unverified';
-    const registryColor = sighting.registry_match ? CONFIG.COLORS.green : CONFIG.COLORS.orange;
+
+    const gear = (typeof GearModule !== 'undefined' && sighting.registry_match)
+      ? GearModule.findByCode(sighting.registry_id)
+      : null;
+
+    const ownerText = gear
+      ? 'Registered to ' + gear.ownerName
+      : (sighting.registry_match ? 'Registered gear' : 'Not registered');
+
+    const ownerClass = (gear || sighting.registry_match)
+      ? 'case-owner case-owner--ok'
+      : 'case-owner case-owner--none';
 
     let photoHtml = '';
     if (sighting.photo_url && isValidPhotoUrl(sighting.photo_url)) {
       photoHtml = `<img src="${sighting.photo_url}" alt="Sighting photo" class="case-detail__photo">`;
     } else {
-      photoHtml = `<div class="case-detail__photo case-detail__photo-placeholder">No photo available</div>`;
+      photoHtml = `<div class="case-detail__photo case-detail__photo-placeholder">No photo</div>`;
     }
 
-    const latStr = (sighting.lat && sighting.lon) ? `${sighting.lat.toFixed(5)}, ${sighting.lon.toFixed(5)}` : 'N/A';
+    const latStr = (sighting.lat && sighting.lon)
+      ? `${sighting.lat.toFixed(5)}, ${sighting.lon.toFixed(5)}`
+      : 'N/A';
+
+    const lengthLine = Array.isArray(sighting.span) && sighting.span.length === 2
+      ? `<dt>Length</dt><dd>${Math.round(window.Shore.spanLength(sighting.span[0], sighting.span[1]))} m</dd>`
+      : '';
 
     const content = `
       <div class="case-detail">
@@ -414,17 +432,31 @@ const UIModule = (function() {
         <div class="case-detail__header">
           <div class="case-detail__info">
             <span class="status-badge status-badge--${sighting.status}">${statusLabel}</span>
-            <span style="color: ${registryColor}; font-weight: 600;">${registryText}</span>
           </div>
           <span class="monospace">${latStr}</span>
         </div>
+        <p class="${ownerClass}">${escapeHtml(ownerText)}</p>
         <dl class="case-detail__labels">
           <dt>Type</dt><dd>${sighting.user_class || 'unknown'}</dd>
-          <dt>Confidence</dt><dd>${confidencePct}%</dd>
-          <dt>Time</dt><dd>${timeStr}</dd>
-          <dt>Accuracy</dt><dd>${sighting.accuracy_m ? sighting.accuracy_m + ' m' : 'Manual'}</dd>
+          ${lengthLine}
+          <dt>Reported</dt><dd>${timeStr}</dd>
+          <dt>Location</dt><dd>${sighting.accuracy_m ? 'GPS · ' + sighting.accuracy_m + ' m' : 'Picked on map'}</dd>
         </dl>
         ${sighting.note ? `<div class="case-detail__note">${escapeHtml(sighting.note)}</div>` : ''}
+
+        <div class="detail-thread">
+          <span class="detail-thread__title">Messages with patrol</span>
+          <div class="thread" id="detail-thread">Loading…</div>
+          <div class="thread-input">
+            <input class="big-input big-input--compact" id="detail-reply" placeholder="Reply to patrol…" maxlength="500">
+            <button type="button" class="big-btn big-btn--soft big-btn--square" id="detail-send" aria-label="Send">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" aria-hidden="true">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </div>
+        </div>
       </div>
     `;
 
@@ -444,7 +476,76 @@ const UIModule = (function() {
     actions.push({ label: 'Close', action: 'close', class: 'btn--secondary' });
 
     showModal('Sighting Details', content, actions);
+    wireDetailThread(sighting.id);
   }
+
+  // The conversation under a report. Loads after the modal opens so the sheet
+  // appears immediately rather than waiting on the network.
+  async function wireDetailThread(caseId) {
+    const host = document.getElementById('detail-thread');
+    const input = document.getElementById('detail-reply');
+    const send = document.getElementById('detail-send');
+    if (!host || typeof CaseModule === 'undefined') return;
+
+    const me = (typeof Auth !== 'undefined' && Auth.current()) || null;
+
+    async function paint() {
+      let list = [];
+      try {
+        list = await CaseModule.messages(caseId);
+      } catch (err) {
+        host.textContent = 'Could not load messages.';
+        return;
+      }
+
+      if (!list.length) {
+        host.innerHTML = '<p class="thread__empty">No messages yet. Patrol may ask you a question here.</p>';
+        return;
+      }
+
+      host.innerHTML = list.map(m => {
+        const mine = me && m.authorName === me.username;
+        return [
+          '<div class="bubble' + (mine ? ' bubble--me' : '') + '">',
+          '  <span class="bubble__who">' + escapeHtml(m.authorName) + '</span>',
+          '  <span class="bubble__text">' + escapeHtml(m.text) + '</span>',
+          '</div>'
+        ].join('');
+      }).join('');
+
+      host.scrollTop = host.scrollHeight;
+    }
+
+    async function submit() {
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      input.disabled = true;
+      try {
+        const result = await CaseModule.sendMessage(caseId, text);
+        if (!result.ok) {
+          input.value = text;
+          showToast(result.message, 'error');
+          return;
+        }
+        await paint();
+      } catch (err) {
+        input.value = text;
+        showToast('Could not send', 'error');
+      } finally {
+        input.disabled = false;
+        input.focus();
+      }
+    }
+
+    send?.addEventListener('click', submit);
+    input?.addEventListener('keydown', e => {
+      if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(); }
+    });
+
+    await paint();
+  }
+
 
   // Confirmation dialog - returns Promise<boolean>
   // A one-line text prompt. Resolves to the string, or null if cancelled.
