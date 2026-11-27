@@ -3,7 +3,10 @@
 
 .screen--map { padding: 0; gap: 0; }
 .screen--map.is-active { height: calc(100dvh - 72px - var(--safe-t)); }
-.mapwrap { position: relative; flex: 1; min-height: 0; }
+/* isolation: Leaflet gives its layers and controls z-index 400-1000. Without this they sit
+   above the details sheet, the "still there?" question, the undo bar and toasts (z-index
+   20-40), which then disappear behind the map. */
+.mapwrap { position: relative; flex: 1; min-height: 0; isolation: isolate; z-index: 0; }
 #boat-map { position: absolute; inset: 0; background: #E6ECEF; }
 .leaflet-container { font-family: inherit; touch-action: none; }
 
@@ -60,3 +63,9 @@
   display: flex; flex-direction: column; gap: 12px;
   background: var(--card); border-radius: 28px 28px 0 0;
 }
+
+/* facts in the details sheet: label on the left, value on the right */
+.facts { display: grid; grid-template-columns: minmax(96px, auto) 1fr; gap: 10px 14px; margin: 0;
+  padding: 14px 16px; background: var(--card); border: 2px solid var(--line); border-radius: 16px; }
+.facts dt { color: var(--ink-soft); font-size: 18px; font-weight: 600; }
+.facts dd { margin: 0; font-size: 20px; font-weight: 700; overflow-wrap: anywhere; }

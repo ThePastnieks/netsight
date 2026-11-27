@@ -274,7 +274,7 @@
         '</div>' +
         '<p class="sub">Stop next to the ' + esc(CLASSES[draft.cls].label.toLowerCase()) + ', then confirm.</p>' +
         '<button type="button" class="btn btn--hero btn--go" id="btn-place" ' + (!haveFix() || blocked ? 'disabled' : '') + '>' +
-          '<span class="btn__icon">◎</span>Confirm location</button>';
+          'Confirm location</button>';
       $('btn-place').onclick = () => {
         draft.lat = gps.lat; draft.lon = gps.lon; draft.accuracy = Math.round(gps.accuracy);
         go('report-photo');
@@ -286,21 +286,25 @@
     const a = draft.ends[0];
     const b = draft.ends[1];
     const ready = haveFix();
+    // Each end is checked live, exactly like a buoy: you cannot mark an end on land.
+    const fence = ready ? Devices.checkGeofence(gps.lat, gps.lon) : null;
+    const blocked = !!fence && !fence.allowed;
     const label = !a ? 'Mark first end' : (!b ? 'Mark second end' : '');
     let check = null;
     if (a && b) check = Shore.checkSpan([a.lat, a.lon], [b.lat, b.lon]);
 
     body.innerHTML =
-      '<div class="pos ' + (ready ? 'pos--ok' : '') + '">' +
+      '<div class="pos ' + (ready ? (blocked ? 'pos--bad' : 'pos--ok') : '') + '">' +
         'Your position<small>' + esc(fixLine()) + (ready ? ' · ±' + Math.round(gps.accuracy) + ' m' : '') + '</small>' +
+        (blocked && label ? '<small>' + esc(fence.reason) + '</small>' : '') +
       '</div>' +
       '<div class="kv"><b>First end</b><span>' + (a ? esc(a.lat.toFixed(5) + ', ' + a.lon.toFixed(5)) : 'not marked') + '</span></div>' +
       '<div class="kv"><b>Second end</b><span>' + (b ? esc(b.lat.toFixed(5) + ', ' + b.lon.toFixed(5)) : 'not marked') + '</span></div>' +
       (check && !check.allowed ? '<div class="pos pos--bad">' + esc(check.reason) + '</div>' : '') +
       (label
-        ? '<button type="button" class="btn btn--hero btn--go" id="btn-mark" ' + (ready ? '' : 'disabled') + '><span class="btn__icon">◎</span>' + label + '</button>'
+        ? '<button type="button" class="btn btn--hero btn--go" id="btn-mark" ' + (ready && !blocked ? '' : 'disabled') + '>' + label + '</button>'
         : (check && check.allowed
-            ? '<button type="button" class="btn btn--hero btn--go" id="btn-place-line"><span class="btn__icon">✓</span>Confirm net line</button>'
+            ? '<button type="button" class="btn btn--hero btn--go" id="btn-place-line">Confirm net line</button>'
             : ''));
 
     if (a) {
@@ -489,21 +493,24 @@
 
     const a = netDraft.ends[0], b = netDraft.ends[1];
     const ready = haveFix();
+    const fence = ready ? Devices.checkGeofence(gps.lat, gps.lon) : null;     // same live check as a buoy
+    const blocked = !!fence && !fence.allowed;
     const label = !a ? 'Mark first end' : (!b ? 'Mark second end' : '');
     const check = a && b ? Shore.checkSpan([a.lat, a.lon], [b.lat, b.lon]) : null;
 
     host.innerHTML =
       '<input class="input" id="net-name" type="text" maxlength="40" value="' + esc(netDraft.label) + '" aria-label="Net name">' +
       '<div class="grid">' +
-        '<button type="button" class="tile tile--row' + (netDraft.type === 'net' ? ' is-on' : '') + '" data-type="net">🕸️ Net</button>' +
-        '<button type="button" class="tile tile--row' + (netDraft.type === 'trap' ? ' is-on' : '') + '" data-type="trap">🧺 Trap</button>' +
+        '<button type="button" class="tile tile--row' + (netDraft.type === 'net' ? ' is-on' : '') + '" data-type="net">Net</button>' +
+        '<button type="button" class="tile tile--row' + (netDraft.type === 'trap' ? ' is-on' : '') + '" data-type="trap">Trap</button>' +
       '</div>' +
-      '<div class="pos ' + (ready ? 'pos--ok' : '') + '">Your position<small>' + esc(fixLine()) + '</small></div>' +
+      '<div class="pos ' + (ready ? (blocked ? 'pos--bad' : 'pos--ok') : '') + '">Your position<small>' + esc(fixLine()) + '</small>' +
+        (blocked && label ? '<small>' + esc(fence.reason) + '</small>' : '') + '</div>' +
       '<div class="kv"><b>First end</b><span>' + (a ? 'marked' : 'not marked') + '</span></div>' +
       '<div class="kv"><b>Second end</b><span>' + (b ? 'marked' : 'not marked') + '</span></div>' +
       (check && !check.allowed ? '<div class="pos pos--bad">' + esc(check.reason) + '</div>' : '') +
       (label
-        ? '<button type="button" class="btn btn--hero btn--go" id="btn-net-mark" ' + (ready ? '' : 'disabled') + '>◎ ' + label + '</button>'
+        ? '<button type="button" class="btn btn--hero btn--go" id="btn-net-mark" ' + (ready && !blocked ? '' : 'disabled') + '>' + label + '</button>'
         : (check && check.allowed ? '<button type="button" class="btn btn--hero btn--primary" id="btn-net-save">Save net</button>' : '')) +
       (a ? '<button type="button" class="btn btn--quiet" id="btn-net-reset">Start over</button>' : '');
 
@@ -554,7 +561,7 @@
       closedCases = raw.filter(isBoaterClosed);
     } catch (err) {
       host.innerHTML = '<p class="lead">Could not load cases.</p><p class="sub">' + esc(friendly(err)) + '</p>' +
-        '<button type="button" class="btn btn--hero btn--go" id="btn-cases-retry">↻ Retry</button>';
+        '<button type="button" class="btn btn--hero btn--go" id="btn-cases-retry">Retry</button>';
       $('btn-cases-retry').onclick = loadCases;
       return;
     }
@@ -661,12 +668,12 @@
       (c.last_confirmed_at ? '<div class="kv"><span>Boaters saw it still there ' + esc(ageOf(c.last_confirmed_at)) + '</span></div>' : '') +
       (c.note ? '<div class="kv"><span>' + esc(c.note) + '</span></div>' : '') +
       (accepted
-        ? '<button type="button" class="btn btn--hero btn--go" id="btn-collected"><span class="btn__icon">✓</span>Collected</button>' +
-          '<button type="button" class="btn btn--hero" id="btn-gonenow"><span class="btn__icon">✕</span>Not there</button>'
+        ? '<button type="button" class="btn btn--hero btn--go" id="btn-collected">Collected</button>' +
+          '<button type="button" class="btn btn--hero" id="btn-gonenow">Not there</button>'
         : '<button type="button" class="btn btn--hero btn--go" id="btn-accept">Accept</button>' +
           '<button type="button" class="btn btn--hero" id="btn-decline">Decline</button>') +
-      '<button type="button" class="btn btn--big" id="btn-map"><span class="btn__icon">📍</span>Open in maps</button>' +
-      (c.reported_by ? '<button type="button" class="btn btn--big" id="btn-ask"><span class="btn__icon">💬</span>Ask the reporter</button>' : '');
+      '<button type="button" class="btn btn--big" id="btn-map">Open in maps</button>' +
+      (c.reported_by ? '<button type="button" class="btn btn--big" id="btn-ask">Ask the reporter</button>' : '');
 
     if (accepted) {
       $('btn-collected').onclick = () => closeOut(c, 'Collected');
@@ -703,8 +710,8 @@
       '<div class="kv"><b>Said it is gone</b><span>' + (votes.length
         ? votes.map(v => esc(v.userName) + ' · ' + esc(ageOf(v.createdAt))).join('<br>')
         : 'No names available') + '</span></div>' +
-      '<button type="button" class="btn btn--hero btn--primary" id="btn-reopen"><span class="btn__icon">↺</span>Reopen</button>' +
-      '<button type="button" class="btn btn--big" id="btn-map"><span class="btn__icon">📍</span>Open in maps</button>';
+      '<button type="button" class="btn btn--hero btn--primary" id="btn-reopen">Reopen</button>' +
+      '<button type="button" class="btn btn--big" id="btn-map">Open in maps</button>';
 
     $('btn-reopen').onclick = () => reopenCase(c);
     $('btn-map').onclick = () => Native.openMap(c.lat, c.lon, (CLASSES[c.user_class] || {}).label || 'Gear');
@@ -937,7 +944,8 @@
 
   // Questions only appear on calm screens, never in the middle of a report.
   function canAsk() {
-    return CALM.includes(stack[stack.length - 1]) && $('ask').hidden && !pending;
+    // Not while a details sheet is open: the question would cover what you are reading.
+    return CALM.includes(stack[stack.length - 1]) && $('ask').hidden && $('pin-sheet').hidden && !pending;
   }
 
   function lastKnownPos() {
@@ -996,9 +1004,9 @@
     $('diag-body').innerHTML =
       '<p class="sub">' + (Native.isNative ? 'Phone app' : 'Browser: the camera opens a file picker and QR scanning is not available here') +
         ' · build ' + esc(CONFIG.BUILD) + '</p>' +
-      '<div class="diag"><button type="button" class="btn btn--big" id="d-gps">◎ Test GPS</button><div class="diag__out" id="d-gps-out"></div></div>' +
-      '<div class="diag"><button type="button" class="btn btn--big" id="d-cam">📷 Test camera</button><div class="diag__out" id="d-cam-out"></div></div>' +
-      '<div class="diag"><button type="button" class="btn btn--big" id="d-qr">▦ Test QR scan</button><div class="diag__out" id="d-qr-out"></div></div>' +
+      '<div class="diag"><button type="button" class="btn btn--big" id="d-gps">Test GPS</button><div class="diag__out" id="d-gps-out"></div></div>' +
+      '<div class="diag"><button type="button" class="btn btn--big" id="d-cam">Test camera</button><div class="diag__out" id="d-cam-out"></div></div>' +
+      '<div class="diag"><button type="button" class="btn btn--big" id="d-qr">Test QR scan</button><div class="diag__out" id="d-qr-out"></div></div>' +
       '<div class="diag"><div class="diag__out">' + (t
         ? 'Today: sunrise ' + esc(clock(t.rise)) + ', sunset ' + esc(clock(t.set)) + '. Gear checks are ' +
           (StillThere.isDaylight(new Date(), gps && gps.lat ? gps.lat : CONFIG.MAP_CENTER[0], gps && gps.lon ? gps.lon : CONFIG.MAP_CENTER[1]) ? 'running now.' : 'paused now (night).')
@@ -1011,9 +1019,9 @@
       try {
         const p = await Native.position();
         gps = { lat: p.lat, lon: p.lon, accuracy: p.accuracy, at: Date.now() };
-        out('d-gps-out', '✓ ' + p.lat.toFixed(5) + ', ' + p.lon.toFixed(5) + ' · ±' + Math.round(p.accuracy) + ' m' +
+        out('d-gps-out', 'OK · ' + p.lat.toFixed(5) + ', ' + p.lon.toFixed(5) + ' · ±' + Math.round(p.accuracy) + ' m' +
           (p.accuracy > 50 ? ' (too rough for gear checks: go outside)' : ''), p.accuracy > 50 ? '' : 'ok');
-      } catch (err) { out('d-gps-out', '✗ ' + friendly(err), 'bad'); }
+      } catch (err) { out('d-gps-out', 'Error: ' + friendly(err), 'bad'); }
     };
 
     $('d-cam').onclick = async () => {
@@ -1023,51 +1031,237 @@
         if (!f) { out('d-cam-out', 'Cancelled'); return; }
         const url = URL.createObjectURL(f);
         $('d-cam-out').className = 'diag__out ok';
-        $('d-cam-out').innerHTML = '✓ ' + Math.round(f.size / 1024) + ' KB<br><img alt="Test photo" src="' + url + '">';
-      } catch (err) { out('d-cam-out', '✗ ' + friendly(err), 'bad'); }
+        $('d-cam-out').innerHTML = 'OK · ' + Math.round(f.size / 1024) + ' KB<br><img alt="Test photo" src="' + url + '">';
+      } catch (err) { out('d-cam-out', 'Error: ' + friendly(err), 'bad'); }
     };
 
     $('d-qr').onclick = async () => {
       out('d-qr-out', 'Opening scanner…');
       try {
         const raw = await Native.scanQr();
-        out('d-qr-out', raw ? '✓ Read: ' + raw : 'Nothing scanned', raw ? 'ok' : '');
-      } catch (err) { out('d-qr-out', '✗ ' + friendly(err), 'bad'); }
+        out('d-qr-out', raw ? 'Read: ' + raw : 'Nothing scanned', raw ? 'ok' : '');
+      } catch (err) { out('d-qr-out', 'Error: ' + friendly(err), 'bad'); }
     };
   }
 
-  // ================================================================ map sheet
+  // ================================================================ map details
+  //
+  // Tapping a report pin or a registered net on the map. What is shown depends on who
+  // is looking: a boater gets what they need to avoid it, judge it and confirm it; an
+  // inspector gets the operational detail. The table is in docs/MOBILE.md ("Tap a
+  // point: who sees what"); keep the two in step.
 
-  // A pin was tapped on the map. Staff get the case; everyone gets the facts and a way
-  // to see it in their own map app.
+  const COMPASS = ['north', 'north-east', 'east', 'south-east', 'south', 'south-west', 'west', 'north-west'];
+  const isStaffRole = () => session.role === 'patrol' || session.role === 'admin';
+  const typeLabel = cls => (CLASSES[cls] || {}).label || 'Gear';
+
+  function bearingDeg(lat1, lon1, lat2, lon2) {
+    const r = Math.PI / 180;
+    const y = Math.sin((lon2 - lon1) * r) * Math.cos(lat2 * r);
+    const x = Math.cos(lat1 * r) * Math.sin(lat2 * r) - Math.sin(lat1 * r) * Math.cos(lat2 * r) * Math.cos((lon2 - lon1) * r);
+    return (Math.atan2(y, x) / r + 360) % 360;
+  }
+
+  // "127 m away · north-east". Empty without a GPS fix. Direction is left out when you
+  // are right on top of it (a bearing of a few metres means nothing).
+  function whereText(lat, lon, metres) {
+    if (!haveFix() || !Number.isFinite(lat) || !Number.isFinite(lon)) return '';
+    const m = Number.isFinite(metres) ? metres : Devices.haversine(gps.lat, gps.lon, lat, lon);
+    const d = m < 1000 ? Math.round(m) + ' m away' : (m / 1000).toFixed(1) + ' km away';
+    return m < 15 ? d : d + ' · ' + COMPASS[Math.round(bearingDeg(gps.lat, gps.lon, lat, lon) / 45) % 8];
+  }
+
+  const two = n => String(n).padStart(2, '0');
+  function stamp(iso) {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '' : two(d.getDate()) + '.' + two(d.getMonth() + 1) + '. ' + two(d.getHours()) + ':' + two(d.getMinutes());
+  }
+  function dateOnly(iso) {
+    const d = new Date(iso);
+    return Number.isNaN(d.getTime()) ? '' : two(d.getDate()) + '.' + two(d.getMonth() + 1) + '.' + d.getFullYear();
+  }
+  function lineLength(span) {
+    return Array.isArray(span) && span.length === 2
+      ? Math.round(Devices.haversine(span[0][0], span[0][1], span[1][0], span[1][1])) : 0;
+  }
+
+  // rows: [label, html value, optional id]
+  function factsHtml(rows) {
+    return '<dl class="facts">' + rows.filter(Boolean).map(r =>
+      '<dt>' + esc(r[0]) + '</dt><dd' + (r[2] ? ' id="' + r[2] + '"' : '') + '>' + r[1] + '</dd>').join('') + '</dl>';
+  }
+
+  // The same words the rest of the app uses, for a boater (no internal detail).
+  function plainStatus(s) {
+    if (s.verdict === 'accepted') return 'Accepted by the patrol. It will be collected.';
+    if (s.status === 'checked') return 'Checked by the patrol';
+    return 'Waiting for the patrol';
+  }
+
+  function sheetShow(html) { $('pin-sheet-body').innerHTML = html; $('pin-sheet').hidden = false; }
+
+  function closePinSheet() { $('pin-sheet').hidden = true; }
+
+  // -------------------------------------------------------------- a report pin
+
+  function canAnswerFromSheet(s) {
+    const cfg = CONFIG.STILL_THERE || {};
+    return haveFix() && gps.accuracy <= (cfg.minAccuracyM || 50) &&
+      StillThere.isAskable(s, session, Date.now()) &&
+      StillThere.distanceM(s, gps.lat, gps.lon) <= (cfg.radiusM || 50) &&
+      StillThere.isDaylight(new Date(), gps.lat, gps.lon);
+  }
+
   function showPinSheet(s) {
-    const staff = session.role === 'patrol' || session.role === 'admin';
-    const label = (CLASSES[s.user_class] || {}).label || 'Gear';
+    const staff = isStaffRole();
+    const mine = !!s.reported_by && s.reported_by === session.id;
     const gear = s.registry_match && s.registry_id ? GearModule.findByCode(s.registry_id) : null;
-    const status = (StatusModule.LABELS || {})[s.status] || s.status;
+    const len = lineLength(s.span);
+    const metres = haveFix() ? StillThere.distanceM(s, gps.lat, gps.lon) : null;
+    const where = whereText(s.lat, s.lon, metres);
+    const gone = Number(s.gone_votes) || 0;
+    const reasons = StatusModule.REASON_LABELS || {};
 
-    $('pin-sheet-body').innerHTML =
-      '<div class="card__top"><span class="grow">' + esc(label) + '</span><span class="chip">' + esc(status) + '</span></div>' +
-      '<div class="kv"><b>' + esc(ageOf(s.created_at)) + (distanceText(s) ? ' · ' + esc(distanceText(s)) : '') + '</b>' +
-        '<span>' + (gear ? esc(gear.ownerName) + ' · ' + esc(gear.code) : (s.registry_match ? 'Registered' : 'Nobody registered it')) +
-        (s.last_confirmed_at ? ' · still there ' + esc(ageOf(s.last_confirmed_at)) : '') + '</span></div>' +
-      (s.note ? '<div class="kv"><span>' + esc(s.note) + '</span></div>' : '') +
+    const rows = [];
+    // ---- everyone
+    if (!staff) rows.push(['Status', esc(plainStatus(s))]);     // inspectors already see the status chip and the decision
+    if (len) rows.push(['Size', esc(len + ' m long')]);
+    if (where) rows.push(['Distance', esc(where)]);
+    rows.push(['Reported', esc(ageOf(s.created_at))]);
+    if (s.last_confirmed_at) rows.push(['Last seen', esc(ageOf(s.last_confirmed_at))]);
+    rows.push(['Registration', esc(s.registry_match ? 'Registered gear' : 'Nobody registered it')]);
+    if (s.report_reason === 'hazard' && !staff) rows.push(['Warning', esc(reasons.hazard || 'Navigation hazard')]);   // inspectors see it as the reason
+    if (gone) {
+      rows.push(staff ? ['Gone votes', esc(String(gone))]
+        : ['Doubt', esc(gone > 1 ? gone + ' boaters say it may be gone' : '1 boater says it may be gone')]);
+    }
+    if (s.note) rows.push(['Note', esc(s.note)]);
+
+    // ---- inspectors only
+    if (staff) {
+      rows.push(['Reported by', esc((s.reporter_name || 'unknown') + (s.created_at ? ' · ' + stamp(s.created_at) : ''))]);
+      if (s.report_reason) rows.push(['Reason', esc(reasons[s.report_reason] || s.report_reason)]);
+      if (s.verdict) {
+        const sev = CaseModule.severityInfo(s.severity);
+        rows.push(['Decision', esc([
+          (s.verdict === 'accepted' ? 'Accepted' : 'Declined') + (s.handled_by ? ' by ' + s.handled_by : ''),
+          sev ? sev.label : '', s.handled_at ? stamp(s.handled_at) : ''].filter(Boolean).join(' · '))]);
+      }
+      if (gear) {
+        rows.push(['Registered to', esc(gear.ownerName + ' · ' + gear.code)]);
+        if (GearModule.isExpired(gear)) rows.push(['Warning', esc('Registration has expired')]);
+      }
+      rows.push(['GPS accuracy', esc(s.accuracy_m != null ? '±' + s.accuracy_m + ' m' : 'Marked on the water')]);
+      rows.push(['Position', esc(s.lat.toFixed(5) + ', ' + s.lon.toFixed(5))]);
+      rows.push(['Confirmed', esc((s.confirmations || 0) + ' times')]);
+      rows.push(['Messages', esc('Loading…'), 'fact-msgs']);
+    }
+
+    const answer = canAnswerFromSheet(s);
+    sheetShow(
+      (s.photo_url ? '<img class="photo" src="' + esc(s.photo_url) + '" alt="Photo of the report">' : '') +
+      '<div class="card__top"><span class="grow">' + esc(typeLabel(s.user_class)) + '</span>' +
+        (mine ? '<span class="chip chip--ok">Your report</span>' : '') +
+        '<span class="chip">' + esc(StatusModule.LABELS[s.status] || s.status) + '</span></div>' +
+      factsHtml(rows) +
+      (answer ? '<button type="button" class="btn btn--hero btn--go" id="sheet-answer">Is it still there? Answer</button>' : '') +
       (staff ? '<button type="button" class="btn btn--hero btn--primary" id="sheet-case">Open case</button>' : '') +
-      '<button type="button" class="btn btn--big" id="sheet-maps"><span class="btn__icon">📍</span>Open in maps</button>' +
-      '<button type="button" class="btn btn--quiet" id="sheet-close">Close</button>';
+      (staff && s.reported_by ? '<button type="button" class="btn btn--big" id="sheet-ask">Ask the reporter</button>' : '') +
+      (mine ? '<button type="button" class="btn btn--big" id="sheet-msgs">Messages</button>' +
+              '<button type="button" class="btn btn--big btn--warn" id="sheet-close-mine">Close my report</button>' : '') +
+      '<button type="button" class="btn btn--big" id="sheet-maps">Open in maps</button>' +
+      '<button type="button" class="btn btn--quiet" id="sheet-close">Close</button>');
 
-    $('pin-sheet').hidden = false;
-    $('sheet-close').onclick = closePinSheet;
-    $('sheet-maps').onclick = () => Native.openMap(s.lat, s.lon, label);
-    const open = $('sheet-case');
-    if (open) open.onclick = () => {
+    const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+    on('sheet-close', closePinSheet);
+    on('sheet-maps', () => Native.openMap(s.lat, s.lon, typeLabel(s.user_class)));
+    on('sheet-answer', () => { closePinSheet(); showAsk(s, metres, () => {}, lastKnownPos()); });
+    on('sheet-case', () => {
       closePinSheet();
       if (!allCases.find(x => x.id === s.id)) allCases.push(s);
       openCase(s.id);
-    };
+    });
+    on('sheet-ask', () => { closePinSheet(); openThread(s); });
+    on('sheet-msgs', () => { closePinSheet(); openThread(s); });
+    on('sheet-close-mine', () => closeOwnReport(s));
+
+    if (staff) {
+      CaseModule.messageCount(s.id).then(n => {
+        const el = $('fact-msgs');
+        if (el) el.textContent = n === 1 ? '1 message' : n + ' messages';
+      }).catch(() => {});
+    }
   }
 
-  function closePinSheet() { $('pin-sheet').hidden = true; }
+  // Closing your own report ("it is gone now"). Taken back by Undo; written after the undo time.
+  function closeOwnReport(s) {
+    closePinSheet();
+    withUndo('Report closed', async () => {
+      try { await StoreModule.updateSightingUnified(s.id, { status: 'resolved' }); }
+      catch (err) { toast(friendly(err)); }
+      BoatMap.refresh();
+    }, () => {});
+  }
+
+  // ----------------------------------------------------- a registered net or trap
+
+  function showGearSheet(g) {
+    const staff = isStaffRole();
+    const own = !!session && (g.ownerId === session.id || g.ownerName === session.username);
+    const typeName = typeLabel(g.type);
+    const len = lineLength(g.span);
+    const metres = haveFix() ? IdentifyModule.distanceToGear([gps.lat, gps.lon], g) : null;
+    const where = whereText(g.lat, g.lon, metres);
+    const expired = GearModule.isExpired(g);
+
+    const rows = [];
+    if (own || staff) { rows.push(['Name', esc(g.label)]); rows.push(['Code', esc(g.code)]); }
+    rows.push(['Type', esc(typeName)]);
+    if (len) rows.push(['Length', esc(len + ' m')]);
+    rows.push(['Registration', esc(expired
+      ? 'Expired' + (g.validUntil ? ' ' + dateOnly(g.validUntil) : '')
+      : (g.validUntil ? 'Valid until ' + dateOnly(g.validUntil) : 'Valid'))]);
+    if (where) rows.push(['Distance', esc(where)]);
+    if (own || staff) rows.push(['Registered', esc(stamp(g.createdAt))]);
+    if (staff) {
+      rows.push(['Owner', esc(g.ownerName)]);
+      if (Number.isFinite(g.lat)) rows.push(['Position', esc(g.lat.toFixed(5) + ', ' + g.lon.toFixed(5))]);
+      rows.push(['Reports matched', esc('Loading…'), 'fact-matched']);
+    }
+
+    sheetShow(
+      '<div class="card__top"><span class="grow">' + esc(own || staff ? g.label : 'Registered ' + typeName.toLowerCase()) + '</span>' +
+        (own ? '<span class="chip chip--ok">Your gear</span>' : '') +
+        '<span class="chip ' + (expired ? 'chip--danger' : 'chip--ok') + '">' + esc(expired ? 'Expired' : 'Valid') + '</span></div>' +
+      factsHtml(rows) +
+      (own ? '<button type="button" class="btn btn--hero btn--primary" id="sheet-code">Show code</button>' +
+             '<button type="button" class="btn btn--big btn--warn" id="sheet-out">Taken out</button>' : '') +
+      (staff ? '<button type="button" class="btn btn--hero btn--primary" id="sheet-identify">Identify</button>' : '') +
+      '<button type="button" class="btn btn--big" id="sheet-maps">Open in maps</button>' +
+      '<button type="button" class="btn btn--quiet" id="sheet-close">Close</button>');
+
+    const on = (id, fn) => { const el = $(id); if (el) el.onclick = fn; };
+    on('sheet-close', closePinSheet);
+    on('sheet-maps', () => Native.openMap(g.lat, g.lon, typeName));
+    on('sheet-code', () => { closePinSheet(); showNetQr(g.id); });
+    on('sheet-identify', () => { closePinSheet(); showIdentification(IdentifyModule.byCode(g.code)); });
+    on('sheet-out', () => {
+      closePinSheet();
+      withUndo(g.label + ' taken out', async () => {
+        const ok = await GearModule.remove(g.id);
+        if (!ok) toast('Could not remove ' + g.label + '. Try again.');
+        BoatMap.refresh();
+      }, () => {});
+    });
+
+    if (staff) {
+      StoreModule.getSightingsUnified(500).then(all => {
+        const n = all.filter(x => x.registry_id === g.code && CaseModule.isOpen(x)).length;
+        const el = $('fact-matched');
+        if (el) el.textContent = String(n);
+      }).catch(() => {});
+    }
+  }
 
   // =============================================================== identify
 
@@ -1080,7 +1274,11 @@
         '<span>' + esc(rec.label) + '</span></div>' +
       '<div class="kv"><span>' + esc(result.reason || '') + '</span></div>' +
       '<button type="button" class="btn btn--hero btn--primary" id="btn-id-again">Identify another</button>';
-    $('btn-id-again').onclick = () => { stack.pop(); show('identify'); };
+    $('btn-id-again').onclick = () => {
+      stack.pop();
+      if (stack[stack.length - 1] !== 'identify') stack.push('identify');
+      show('identify');
+    };
     go('identify-result');
   }
 
@@ -1166,7 +1364,7 @@
 
     bind();
     initCasePickers();
-    BoatMap.init({ onPin: showPinSheet });
+    BoatMap.init({ onPin: showPinSheet, onGear: showGearSheet });
     show('home');
     startGearChecks();
   }

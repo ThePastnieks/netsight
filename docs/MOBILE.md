@@ -38,7 +38,7 @@ The **Map** button (home screen, every role) opens an interactive OpenStreetMap 
 
 - **You** are a dot with an accuracy circle. It is green inside the permitted water, red outside ("Not on the drawn water"), blue when no shoreline has been drawn. **Centre on me** brings you back; the map never moves by itself after the first GPS fix.
 - **The red line** is the 50 m limit, drawn from the shoreline an administrator drew in the website (Admin → Shore). It comes from that data, not from the tiles, so it looks the same with any tile source.
-- **Reports** are pins coloured by status; nets show as lines. Registered nets: yours in thick blue, others dashed green. Open reports stay on the map day and night; only the "still there?" questions pause at night. Resolved or declined reports are not shown.
+- **Reports** are pins coloured by status; nets show as lines. Registered nets: yours in thick blue, others dashed green, expired registrations in red (an expired net is still in the water). **Tap any pin or registered net for its details** (see the table below for who sees what). Open reports stay on the map day and night; only the "still there?" questions pause at night. Resolved or declined reports are not shown.
 - **Back on the map.** A swipe that starts at the very edge of the screen is Android's *Back* gesture, and is easy to trigger by accident while panning. On the map, Back first closes an open pin sheet, and otherwise needs a **second press within 2.5 s** ("Swipe back again to leave the map"). The big ‹ button in the header leaves at once. On a desktop browser, **Escape** stands in for Back.
 - **Tiles are OpenStreetMap, for testing and presentations only.** Its [usage policy](https://operations.osmfoundation.org/policies/tiles/) forbids heavy and commercial use and may block app traffic. To switch (for example to MapTiler, free key) build with:
   ```bash
@@ -46,6 +46,48 @@ The **Map** button (home screen, every role) opens an interactive OpenStreetMap 
   NETSIGHT_TILE_ATTRIBUTION='&copy; MapTiler &copy; OpenStreetMap contributors' npm run build
   ```
 - **A new project has no shoreline, so no red lines.** Draw one: `npm run site` builds the website against your test project (use the same `NETSIGHT_*` variables as the app build) and serves it at <http://localhost:5174/login.html>; sign in as an admin and use Admin → Shore.
+
+### Where gear may be placed
+
+A buoy, float, trap or net may only be placed on the drawn water, at least 50 m from the shore. The check is live for every one of them: **Confirm location** (buoy, float) and **Mark first end / Mark second end** (trap, net, and *Register a net*) are disabled, with the reason shown, while your position is on land or too close to the shore. A line is also checked as a whole (every point along it) before it can be confirmed.
+
+### Tap a point: who sees what
+
+Every report pin and every registered net on the map can be tapped. A bottom sheet shows what that person needs, and nothing more.
+
+**A report (a buoy, float, net or trap someone reported)**
+
+| Information | Boater | Inspector |
+|---|---|---|
+| Photo, type, length of a net, distance and direction from you | yes | yes |
+| Status in plain words (waiting for the patrol / accepted, will be collected) | yes | yes, with the exact status |
+| When reported, when last seen still there | yes | yes, with the exact date and time |
+| Navigation hazard warning | yes | yes |
+| Registered or not | yes ("registered gear", no owner name) | yes, with owner, code and validity |
+| "N boaters say it may be gone" | yes | yes, as vote count |
+| The reporter's note | yes | yes |
+| Who reported it | only "your report" on your own | yes, name |
+| Report reason, severity, who decided and when | no | yes |
+| GPS accuracy and exact position | no | yes |
+| Confirmations and number of messages | no | yes |
+| Answer "is it still there?" (within 50 m, daylight) | yes | yes |
+| Messages, close my report | on your own report | n/a |
+| Open case (accept, decline, collect), ask the reporter | no | yes |
+| Open in maps | yes | yes |
+
+**A registered net or trap (a fisherman's own gear)**
+
+| Information | Its owner | Other boaters | Inspector |
+|---|---|---|---|
+| Type, length, distance and direction | yes | yes | yes |
+| Whether the registration is valid or expired | yes, with date | yes | yes, with date |
+| Name, code and registration date | yes | no | yes |
+| Owner's name | (you) | no | yes |
+| Reports matched to it | no | no | yes |
+| Show the QR code, take it out | yes | no | no |
+| Identify (full check) | no | no | yes |
+
+The reasoning: a boater needs to know what it is, how to avoid it, whether it is legal, and how fresh the information is. Who reported it, how the patrol decided, and technical details are for the inspector. An owner sees their own nets in full.
 
 ### Demo data for a test project
 

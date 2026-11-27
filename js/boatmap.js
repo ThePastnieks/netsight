@@ -89,23 +89,31 @@ const BoatMap = (function () {
     loading = false;
   }
 
-  // Registered nets: yours in blue and thick, everyone else's in green and dashed.
+  // Registered nets: yours in blue and thick, everyone else's in green and dashed,
+  // expired ones in red. A tap opens the details sheet (what is shown depends on who is looking: boat.js).
+  // The visible line is thin, so an invisible, much wider line sits on top as the touch
+  // target: a fingertip on a wet screen cannot hit a 4 px line.
   function drawNets() {
     if (!netsLayer) return;
     netsLayer.clearLayers();
     const me = Auth.current();
 
-    GearModule.activeOnly().forEach(g => {
+    // All registered gear, expired ones too: a net whose registration ran out is still in
+    // the water, and is exactly what an inspector wants to see (drawn in red).
+    GearModule.all().forEach(g => {
       const own = !!me && (g.ownerId === me.id || g.ownerName === me.username);
-      const color = own ? '#0B5FA5' : '#2FA36B';
-      const tip = g.code + ' · ' + g.ownerName;
+      const expired = GearModule.isExpired(g);
+      const color = expired ? '#E5484D' : (own ? '#0B5FA5' : '#2FA36B');
+      const open = () => { if (handlers.onGear) handlers.onGear(g); };
 
       if (Array.isArray(g.span) && g.span.length === 2) {
         L.polyline(g.span, { color, weight: own ? 6 : 4, opacity: 0.9, dashArray: own ? null : '8 6', lineCap: 'round' })
-          .bindTooltip(tip, { sticky: true }).addTo(netsLayer);
+          .on('click', open).addTo(netsLayer);
+        L.polyline(g.span, { color, weight: 32, opacity: 0, fill: false, lineCap: 'round' })
+          .on('click', open).addTo(netsLayer);
       } else if (Number.isFinite(g.lat) && Number.isFinite(g.lon)) {
-        L.circleMarker([g.lat, g.lon], { radius: 9, color, weight: 3, fillColor: color, fillOpacity: 0.5 })
-          .bindTooltip(tip).addTo(netsLayer);
+        L.circleMarker([g.lat, g.lon], { radius: 14, color, weight: 3, fillColor: color, fillOpacity: 0.5 })
+          .on('click', open).addTo(netsLayer);
       }
     });
   }

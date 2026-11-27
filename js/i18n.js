@@ -56,7 +56,7 @@ const I18n = (function () {
       if (done.some((p, i) => p !== parts[i])) return done.join(' · ');
     }
 
-    // A leading symbol before the words ("◎ Mark first end", "🧺 Trap"): keep it, translate the rest.
+    // A leading symbol before the words (for example "+ Add"): keep it, translate the rest.
     const sym = text.match(/^([^\p{L}\p{N}\s"'“”(]{1,4}) (.+)$/u);
     if (sym) {
       const rest = core(sym[2]);

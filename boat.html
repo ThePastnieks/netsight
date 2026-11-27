@@ -44,27 +44,27 @@
 
       <div class="stack">
         <button type="button" class="btn btn--hero btn--primary" data-go="report-type" data-role-show="user patrol admin">
-          <span class="btn__icon">＋</span>Report gear
+          Report gear
         </button>
 
         <button type="button" class="btn btn--big" data-go="map" data-role-show="user patrol admin">
-          <span class="btn__icon">🗺️</span>Map
+          Map
         </button>
 
         <button type="button" class="btn btn--big" data-go="nets" data-role-show="user">
-          <span class="btn__icon">🕸️</span>My nets
+          My nets
         </button>
 
         <button type="button" class="btn btn--big" data-go="my-reports" data-role-show="user">
-          <span class="btn__icon">💬</span>My reports <span class="badge" id="reply-count" hidden>0</span>
+          My reports <span class="badge" id="reply-count" hidden>0</span>
         </button>
 
         <button type="button" class="btn btn--big btn--primary" data-go="cases" data-role-show="patrol admin">
-          <span class="btn__icon">📋</span>Cases <span class="badge" id="case-count" hidden>0</span>
+          Cases <span class="badge" id="case-count" hidden>0</span>
         </button>
 
         <button type="button" class="btn btn--big" data-go="identify" data-role-show="patrol admin">
-          <span class="btn__icon">🔍</span>Identify
+          Identify
         </button>
       </div>
 
@@ -78,10 +78,10 @@
     <!-- ===================================================== report: type -->
     <section class="screen" id="screen-report-type" data-title="What did you see?">
       <div class="grid">
-        <button type="button" class="tile" data-class="buoy"><span class="tile__icon">🛟</span>Buoy</button>
-        <button type="button" class="tile" data-class="float"><span class="tile__icon">🟠</span>Float</button>
-        <button type="button" class="tile" data-class="net"><span class="tile__icon">🕸️</span>Net</button>
-        <button type="button" class="tile" data-class="trap"><span class="tile__icon">🧺</span>Trap</button>
+        <button type="button" class="tile" data-class="buoy">Buoy</button>
+        <button type="button" class="tile" data-class="float">Float</button>
+        <button type="button" class="tile" data-class="net">Net</button>
+        <button type="button" class="tile" data-class="trap">Trap</button>
       </div>
     </section>
 
@@ -94,8 +94,8 @@
     <section class="screen" id="screen-report-photo" data-title="Photo">
       <div class="stack">
         <div class="preview" id="photo-preview" hidden><img id="photo-img" alt="Your photo"></div>
-        <button type="button" class="btn btn--hero" id="btn-photo"><span class="btn__icon">📷</span><span id="btn-photo-text">Take photo</span></button>
-        <button type="button" class="btn btn--hero btn--go" id="btn-send"><span class="btn__icon">➤</span>Send</button>
+        <button type="button" class="btn btn--hero" id="btn-photo"><span id="btn-photo-text">Take photo</span></button>
+        <button type="button" class="btn btn--hero btn--go" id="btn-send">Send</button>
         <button type="button" class="btn btn--quiet" id="btn-send-nophoto">Send without a photo</button>
       </div>
     </section>
@@ -111,7 +111,7 @@
 
     <section class="screen" id="screen-report-done" data-title="Sent">
       <div class="center">
-        <div class="bignum bignum--ok">✓</div>
+        <div class="bignum bignum--ok">OK</div>
         <p class="lead" id="done-text">Reported. Thank you.</p>
         <button type="button" class="btn btn--hero btn--primary" id="btn-done">Done</button>
       </div>
@@ -122,7 +122,7 @@
         <div class="bignum bignum--bad">!</div>
         <p class="lead" id="failed-text">Could not send.</p>
         <p class="sub">Your report is still here. Nothing is lost.</p>
-        <button type="button" class="btn btn--hero btn--go" id="btn-retry"><span class="btn__icon">↻</span>Retry</button>
+        <button type="button" class="btn btn--hero btn--go" id="btn-retry">Retry</button>
         <button type="button" class="btn btn--quiet" id="btn-failed-home">Discard this report</button>
       </div>
     </section>
@@ -130,7 +130,7 @@
     <!-- ===================================================== my nets -->
     <section class="screen" id="screen-nets" data-title="My nets">
       <div class="stack">
-        <button type="button" class="btn btn--hero btn--primary" id="btn-net-new"><span class="btn__icon">＋</span>Register a net</button>
+        <button type="button" class="btn btn--hero btn--primary" id="btn-net-new">Register a net</button>
         <div class="list" id="nets-list"></div>
       </div>
     </section>
@@ -174,8 +174,8 @@
     <!-- ===================================================== patrol: identify -->
     <section class="screen" id="screen-identify" data-title="Identify">
       <div class="stack">
-        <button type="button" class="btn btn--hero btn--primary" id="btn-id-scan"><span class="btn__icon">▦</span>Scan QR code</button>
-        <button type="button" class="btn btn--hero" id="btn-id-here"><span class="btn__icon">◎</span>What is here?</button>
+        <button type="button" class="btn btn--hero btn--primary" id="btn-id-scan">Scan QR code</button>
+        <button type="button" class="btn btn--hero" id="btn-id-here">What is here?</button>
         <div class="codebox">
           <input class="input" id="id-code" type="text" inputmode="text" autocapitalize="characters"
                  autocomplete="off" autocorrect="off" spellcheck="false" placeholder="NS-ABC123" aria-label="Gear code">
@@ -196,7 +196,7 @@
         <div class="me-bar" id="me-bar" data-state="idle" role="status">
           <span class="me-bar__dot"></span><span id="me-readout">Looking for GPS…</span>
         </div>
-        <button type="button" class="map-fab" id="btn-centre"><span class="btn__icon">◎</span>Centre on me</button>
+        <button type="button" class="map-fab" id="btn-centre">Centre on me</button>
       </div>
     </section>
 
@@ -228,8 +228,8 @@
       <h2 class="ask__title" id="ask-title">Is it still here?</h2>
       <img class="photo" id="ask-photo" alt="" hidden>
       <p class="sub" id="ask-sub"></p>
-      <button type="button" class="btn btn--hero btn--go" id="ask-here"><span class="btn__icon">✓</span>Still here</button>
-      <button type="button" class="btn btn--hero btn--danger" id="ask-gone"><span class="btn__icon">✕</span>It's gone</button>
+      <button type="button" class="btn btn--hero btn--go" id="ask-here">Still here</button>
+      <button type="button" class="btn btn--hero btn--danger" id="ask-gone">It's gone</button>
       <button type="button" class="btn btn--quiet" id="ask-skip">Not sure</button>
     </div>
   </section>
