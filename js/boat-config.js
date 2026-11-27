@@ -14,6 +14,7 @@
     radiusM: 50,
     minAccuracyM: 50,
     cooldownHours: 6,
-    snoozeMinutes: 30
+    snoozeMinutes: 30,
+    keepAwake: true        // keep the screen on while gear checks are running
   };
 })();

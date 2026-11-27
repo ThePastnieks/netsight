@@ -169,7 +169,7 @@ const StillThere = (function () {
 
   // Sends one answer. Cloud: one row; the database applies the rules.
   // Local mode (no Supabase): applies the same rules itself so the feature can be tried.
-  async function answer(sighting, value, distance) {
+  async function answer(sighting, value, distance, pos) {
     const me = (typeof Auth !== 'undefined' && Auth.current()) || null;
     if (!me) return { ok: false, message: 'Sign in first' };
     if (value !== 'here' && value !== 'gone') return { ok: false, message: 'Unknown answer' };
@@ -182,7 +182,11 @@ const StillThere = (function () {
         user_id: me.id,
         user_name: me.username,
         answer: value,
-        distance_m: Number.isFinite(distance) ? Math.round(distance) : null
+        distance_m: Number.isFinite(distance) ? Math.round(distance) : null,
+        // The database measures the distance itself from this position and
+        // refuses answers from far away (supabase/migrations/010_vote_distance.sql).
+        user_lat: pos ? pos.lat : null,
+        user_lon: pos ? pos.lon : null
       });
       // Already answered in the last 6 hours: nothing to do, not a failure.
       if (error && error.code !== '23505') return { ok: false, message: error.message };
@@ -220,6 +224,18 @@ const StillThere = (function () {
     }
     mute(sighting.id, cfg().cooldownHours * 3600000);
     return { ok: true };
+  }
+
+  // Who answered what for one report: [{ userName, answer, createdAt }], oldest first.
+  async function votesFor(id) {
+    const client = (Auth.isCloud && Auth.isCloud()) ? Auth.client() : null;
+    if (client) {
+      const { data } = await client.from('gear_checks')
+        .select('user_name, answer, created_at').eq('sighting_id', id).order('created_at', { ascending: true });
+      return (data || []).map(r => ({ userName: r.user_name, answer: r.answer, createdAt: r.created_at }));
+    }
+    return readLocalChecks().filter(c => c.sightingId === id)
+      .map(c => ({ userName: c.userName, answer: c.answer, createdAt: c.createdAt }));
   }
 
   function skip(sighting) {
@@ -290,7 +306,7 @@ const StillThere = (function () {
     if (!found) return;
 
     asking = true;
-    handlers.onAsk(found.sighting, found.distance, () => { asking = false; });
+    handlers.onAsk(found.sighting, found.distance, () => { asking = false; }, lastPos);
   }
 
   // handlers: { onAsk(sighting, distance, done), canAsk(), onState({kind,text}) }
@@ -310,7 +326,7 @@ const StillThere = (function () {
     handlers = null;
   }
 
-  const api = { setClock, sunTimes, isDaylight, nextSunrise, isAskable, pick, distanceM, answer, skip, start, stop,
+  const api = { setClock, sunTimes, isDaylight, nextSunrise, isAskable, pick, distanceM, answer, votesFor, skip, start, stop,
     reload, state: () => state };
 
   if (typeof module !== 'undefined' && module.exports) module.exports = api;

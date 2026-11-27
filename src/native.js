@@ -6,6 +6,8 @@ import { Capacitor } from '@capacitor/core';
 import { App } from '@capacitor/app';
 import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { Geolocation } from '@capacitor/geolocation';
+import { Haptics, NotificationType } from '@capacitor/haptics';
+import { AppLauncher } from '@capacitor/app-launcher';
 import { BarcodeScanner, BarcodeFormat } from '@capacitor-mlkit/barcode-scanning';
 
 const isNative = Capacitor.isNativePlatform();
@@ -121,6 +123,34 @@ async function scanQr() {
   return barcodes && barcodes[0] ? barcodes[0].rawValue : null;
 }
 
+// ------------------------------------------------------------------- buzz
+// A short vibration, for when a gear-check question appears and the phone is in
+// a pocket or on a dashboard. Silent failure: a missing vibrator is not an error.
+async function buzz() {
+  try {
+    if (isNative) {
+      await Haptics.notification({ type: NotificationType.Warning });
+      await Haptics.vibrate({ duration: 300 });
+    } else if (navigator.vibrate) {
+      navigator.vibrate([200, 100, 200]);
+    }
+  } catch (e) { /* ignore */ }
+}
+
+// ------------------------------------------------------------ open in maps
+// Shows a position in whatever map app the phone has (geo: link). Falls back to
+// the web map when there is none, or in a desktop browser.
+async function openMap(lat, lon, label) {
+  const q = lat + ',' + lon;
+  if (isNative) {
+    try {
+      await AppLauncher.openUrl({ url: 'geo:' + q + '?q=' + q + '(' + encodeURIComponent(label || 'NetSight') + ')' });
+      return;
+    } catch (e) { /* no map app: use the web map below */ }
+  }
+  window.open('https://www.google.com/maps/search/?api=1&query=' + q, '_blank');
+}
+
 // ------------------------------------------------------------ back button
 // Android's back button walks back through screens before leaving the app.
 function onBack(handler) {
@@ -130,4 +160,4 @@ function onBack(handler) {
   });
 }
 
-window.Native = { isNative, position, watch, photo, scanQr, onBack };
+window.Native = { isNative, position, watch, photo, scanQr, buzz, openMap, onBack };

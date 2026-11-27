@@ -36,6 +36,7 @@
   let sendTimer = null;
   let netDraft = null;
   let allCases = [];
+  let closedCases = [];          // closed by boaters' votes in the last week
   let casesTab = 'decide';
   let thread = null;
   const decidingIds = new Set();   // decided but still inside the undo window: hidden from the list
@@ -523,7 +524,9 @@
     host.innerHTML = '<p class="sub">Loading…</p>';
     try {
       await GearModule.load();
-      allCases = (await StoreModule.getSightingsUnified(500)).filter(c => CaseModule.isOpen(c));
+      const raw = await StoreModule.getSightingsUnified(500);
+      allCases = raw.filter(c => CaseModule.isOpen(c));
+      closedCases = raw.filter(isBoaterClosed);
     } catch (err) {
       host.innerHTML = '<p class="lead">Could not load cases.</p><p class="sub">' + esc(friendly(err)) + '</p>' +
         '<button type="button" class="btn btn--hero btn--go" id="btn-cases-retry">↻ Retry</button>';
@@ -533,9 +536,19 @@
     renderCases();
   }
 
+  const WEEK_MS = 7 * 86400000;
+  // Closed automatically because 2 boaters said "gone": patrol should be able to see and undo that.
+  function isBoaterClosed(c) {
+    if (c.status !== 'resolved' || c.handled_by !== 'boaters') return false;
+    const t = new Date(c.handled_at || c.updated_at || 0).getTime();
+    return !Number.isFinite(t) || t === 0 || Date.now() - t < WEEK_MS;
+  }
+
   const visibleCase = c => !decidingIds.has(c.id);
   const toDecide = () => CaseModule.sortForPatrol(allCases.filter(c => !c.verdict && visibleCase(c)));
   const toCollect = () => CaseModule.sortForPatrol(allCases.filter(c => c.verdict === 'accepted' && visibleCase(c)));
+  const toClosed = () => closedCases.filter(visibleCase)
+    .sort((a, b) => new Date(b.handled_at || 0) - new Date(a.handled_at || 0));
 
   function ageOf(iso) {
     if (!iso || Number.isNaN(new Date(iso).getTime())) return 'time unknown';
@@ -555,10 +568,30 @@
     const host = $('cases-list');
     const decide = toDecide();
     const collect = toCollect();
+    const closed = toClosed();
     $('n-decide').textContent = decide.length;
     $('n-collect').textContent = collect.length;
+    $('n-closed').textContent = closed.length;
+    $('tab-closed').hidden = closed.length === 0 && casesTab !== 'closed';
     $('tab-decide').classList.toggle('is-on', casesTab === 'decide');
     $('tab-collect').classList.toggle('is-on', casesTab === 'collect');
+    $('tab-closed').classList.toggle('is-on', casesTab === 'closed');
+
+    if (casesTab === 'closed') {
+      if (!closed.length) {
+        host.innerHTML = '<p class="lead">Nothing closed by boaters.</p><p class="sub">Reports that two boaters say are gone appear here for a week, so you can reopen them.</p>';
+        return;
+      }
+      host.innerHTML = closed.map(c =>
+        '<button type="button" class="card" data-case="' + esc(c.id) + '">' +
+          '<div class="card__top"><span class="grow">' + esc((CLASSES[c.user_class] || {}).label || 'Gear') + '</span>' +
+            '<span class="chip chip--warn">Closed by boaters</span></div>' +
+          '<div class="card__sub">Closed ' + esc(ageOf(c.handled_at)) + (distanceText(c) ? ' · ' + esc(distanceText(c)) : '') + '</div>' +
+          '<div class="card__sub">Reported ' + esc(ageOf(c.created_at)) + '</div>' +
+        '</button>').join('');
+      host.querySelectorAll('[data-case]').forEach(b => b.onclick = () => openClosed(b.dataset.case));
+      return;
+    }
 
     const list = casesTab === 'decide' ? decide : collect;
     if (!list.length) {
@@ -607,6 +640,7 @@
           '<button type="button" class="btn btn--hero" id="btn-gonenow"><span class="btn__icon">✕</span>Not there</button>'
         : '<button type="button" class="btn btn--hero btn--go" id="btn-accept">Accept</button>' +
           '<button type="button" class="btn btn--hero" id="btn-decline">Decline</button>') +
+      '<button type="button" class="btn btn--big" id="btn-map"><span class="btn__icon">📍</span>Open in maps</button>' +
       (c.reported_by ? '<button type="button" class="btn btn--big" id="btn-ask"><span class="btn__icon">💬</span>Ask the reporter</button>' : '');
 
     if (accepted) {
@@ -616,9 +650,65 @@
       $('btn-accept').onclick = () => go('case-accept');
       $('btn-decline').onclick = () => go('case-decline');
     }
+    $('btn-map').onclick = () => Native.openMap(c.lat, c.lon, (CLASSES[c.user_class] || {}).label || 'Gear');
     const ask = $('btn-ask');
     if (ask) ask.onclick = () => openThread(c);
     go('case');
+  }
+
+  // A report closed because 2 boaters said it is gone. Patrol sees who said so
+  // and can reopen it. Reopening also resets the vote count, so the same two
+  // answers cannot close it again straight away.
+  async function openClosed(id) {
+    const c = closedCases.find(x => x.id === id);
+    if (!c) return;
+    currentCase = c;
+    $('case-body').innerHTML = '<p class="sub">Loading…</p>';
+    go('case');
+
+    let votes = [];
+    try { votes = (await StillThere.votesFor(c.id)).filter(v => v.answer === 'gone'); } catch (e) { /* the page still works without the list */ }
+    if (currentCase !== c) return;
+
+    $('case-body').innerHTML =
+      (c.photo_url ? '<img class="photo" src="' + esc(c.photo_url) + '" alt="Photo of the report">' : '') +
+      '<div class="pos pos--bad">Closed by boaters ' + esc(ageOf(c.handled_at)) + '. Check it before you trust it.</div>' +
+      '<div class="kv"><b>' + esc((CLASSES[c.user_class] || {}).label || 'Gear') + '</b>' +
+        '<span>Reported ' + esc(ageOf(c.created_at)) + (c.reporter_name ? ' by ' + esc(c.reporter_name) : '') + '</span></div>' +
+      '<div class="kv"><b>Said it is gone</b><span>' + (votes.length
+        ? votes.map(v => esc(v.userName) + ' · ' + esc(ageOf(v.createdAt))).join('<br>')
+        : 'No names available') + '</span></div>' +
+      '<button type="button" class="btn btn--hero btn--primary" id="btn-reopen"><span class="btn__icon">↺</span>Reopen</button>' +
+      '<button type="button" class="btn btn--big" id="btn-map"><span class="btn__icon">📍</span>Open in maps</button>';
+
+    $('btn-reopen').onclick = () => reopenCase(c);
+    $('btn-map').onclick = () => Native.openMap(c.lat, c.lon, (CLASSES[c.user_class] || {}).label || 'Gear');
+  }
+
+  function reopenCase(c) {
+    decidingIds.add(c.id);
+    stack = ['home', 'cases'];
+    show('cases');
+    withUndo('Reopened: ' + ((CLASSES[c.user_class] || {}).label || 'gear'), async () => {
+      try {
+        await StoreModule.updateSightingUnified(c.id, {
+          status: 'reported',
+          handled_by: null,
+          handled_at: null,
+          gone_votes: 0,
+          last_confirmed_at: new Date().toISOString(),
+          note: ((c.note ? c.note + ' · ' : '') + 'Reopened by ' + session.username).slice(0, 500)
+        });
+      } catch (err) {
+        toast(friendly(err));
+      } finally {
+        decidingIds.delete(c.id);
+        if (stack[stack.length - 1] === 'cases') loadCases();
+      }
+    }, () => {
+      decidingIds.delete(c.id);
+      if (stack[stack.length - 1] === 'cases') renderCases();
+    });
   }
 
   // Closing an accepted case: hidden at once, written for real after the undo time.
@@ -793,7 +883,7 @@
 
   // "Is it still there?" pop-up. The answer is sent after the undo time; Undo
   // brings the question back.
-  function showAsk(s, distance, done) {
+  function showAsk(s, distance, done, pos) {
     const type = ((CLASSES[s.user_class] || {}).label || 'Gear').toLowerCase();
     $('ask-title').textContent = 'Is the ' + type + ' still here?';
     $('ask-dist').textContent = Math.round(distance) + ' m away';
@@ -803,15 +893,17 @@
     img.hidden = !s.photo_url;
     if (s.photo_url) img.src = s.photo_url;
     $('ask').hidden = false;
+    if (!pos) pos = lastKnownPos();
+    Native.buzz();
 
     const send = value => {
       $('ask').hidden = true;
       withUndo(value === 'here' ? '“Still here” sent' : '“Gone” sent', async () => {
-        const r = await StillThere.answer(s, value, distance);
+        const r = await StillThere.answer(s, value, distance, pos);
         if (!r.ok) { toast(r.message || 'Answer not sent'); StillThere.skip(s); }
         done();
         StillThere.reload();
-      }, () => showAsk(s, distance, done));
+      }, () => showAsk(s, distance, done, pos));
     };
     $('ask-here').onclick = () => send('here');
     $('ask-gone').onclick = () => send('gone');
@@ -823,7 +915,36 @@
     return CALM.includes(stack[stack.length - 1]) && $('ask').hidden && !pending;
   }
 
+  function lastKnownPos() {
+    return haveFix() ? { lat: gps.lat, lon: gps.lon, accuracy: gps.accuracy } : null;
+  }
+
+  // Keep the screen on while gear checks run: Android stops GPS for an app whose
+  // screen is off. Released at night, on land, and when the app is put away.
+  let wake = null;
+  let wantAwake = false;
+
+  async function wakeOn() {
+    if (wake || !('wakeLock' in navigator) || document.visibilityState !== 'visible') return;
+    try {
+      wake = await navigator.wakeLock.request('screen');
+      wake.addEventListener('release', () => { wake = null; });
+    } catch (e) { /* not allowed right now: checks still run while the screen is on */ }
+  }
+
+  function wakeOff() {
+    if (wake) { wake.release().catch(() => {}); wake = null; }
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'visible' && wantAwake) wakeOn();
+  });
+
   function paintWatch(st) {
+    const cfgAwake = !!(CONFIG.STILL_THERE && CONFIG.STILL_THERE.keepAwake);
+    wantAwake = cfgAwake && !!st && (st.kind === 'on' || st.kind === 'weak');
+    if (wantAwake) wakeOn(); else wakeOff();
+
     const line = $('watch-line');
     line.hidden = !st || !st.text;
     $('watch-text').textContent = st ? st.text : '';
@@ -964,6 +1085,7 @@
 
     $('tab-decide').onclick = () => { casesTab = 'decide'; renderCases(); };
     $('tab-collect').onclick = () => { casesTab = 'collect'; renderCases(); };
+    $('tab-closed').onclick = () => { casesTab = 'closed'; renderCases(); };
     $('btn-diag').onclick = () => go('diag');
 
     $('undo-btn').onclick = undoPending;

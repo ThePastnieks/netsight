@@ -7,7 +7,7 @@ It uses the **same Supabase project and the same accounts** as the website. Admi
 | Role | Sees |
 |---|---|
 | User (boater / fisherman) | **Report gear**, **My nets** (register a net, show its code, "Taken out"), **My reports** (questions from the patrol, with quick replies) |
-| Water Patrol, Administrator | **Cases**: *To decide* (accept with severity / decline with reason) and *To collect* (accepted: Collected / Not there), with **Ask the reporter**; **Identify** (scan QR, "what is here?", type code); **Report gear** |
+| Water Patrol, Administrator | **Cases**: *To decide* (accept with severity / decline with reason), *To collect* (accepted: Collected / Not there) and *Closed by boaters* (Reopen), each with **Open in maps** and **Ask the reporter**; **Identify** (scan QR, "what is here?", type code); **Report gear** |
 
 ## "Is it still there?" (gear checks)
 
@@ -17,6 +17,9 @@ Like Waze asking whether the police are still there. While the app is open and a
 - **Never at night.** From sunset to sunrise (calculated from the phone's position, no network) the questions wait; reports stay on the map. The home screen says "Gear checks paused until sunrise (08:31)".
 - **Also not asked:** when GPS is rougher than 50 m, when the person is on land (once shore shapes exist), about your own report from the last 2 hours, or about something you answered in the last 6 hours.
 - **"Still here"** confirms the report and forgets earlier "gone" votes. **"Gone"** is a vote: when **2 different people** say gone, an undecided report is closed automatically. An accepted report is **never** closed by boaters; patrol sees "N say gone" on the *To collect* list instead. The rule lives in the database (`008_gear_checks.sql`), not in the app.
+- **Votes must come from near the report.** The answer carries the voter's position and the database measures the distance itself (to the nearest point of a net's line), refusing answers from more than 120 m away (`010_vote_distance.sql`). A phone can still fake its position, so this raises the bar rather than proving anything.
+- **Patrol can undo boaters' decisions.** Cases has a third tab, *Closed by boaters* (reports closed by two "gone" votes in the last 7 days), showing who said so, with **Reopen**. Reopening resets the vote count so the same two answers cannot close it again.
+- **The phone buzzes** when a question appears, and the **screen stays on** while checks are running (released at night, on land, or when the app is put away), because Android stops GPS for an app whose screen is off. Turn this off with `keepAwake: false` in `js/boat-config.js`.
 - **Limit:** questions come only while the app is open on screen (Android stops GPS for background apps). Asking with the screen off needs a foreground service and notification: not built.
 
 Settings are in `js/boat-config.js` (`CONFIG.STILL_THERE`). The "2 votes" number is in the SQL.
@@ -61,8 +64,8 @@ Not verified yet. The QR plugin (`@capacitor-mlkit/barcode-scanning`) is not Swi
 
 ## Before real users
 
-- Run the migrations in the Supabase SQL editor, in this order: `007_hardening.sql`, `008_gear_checks.sql`, `009_function_privileges.sql`. Try them on a copy of the project first.
-- A fresh project needs `003_full_schema.sql`, `006_case_decisions.sql`, then `007`, `008`, `009` (`001`, `002`, `004` and `005` are not needed).
+- Run the migrations in the Supabase SQL editor, in this order: `007_hardening.sql`, `008_gear_checks.sql`, `009_function_privileges.sql`, `010_vote_distance.sql`. Try them on a copy of the project first.
+- A fresh project needs `003_full_schema.sql`, `006_case_decisions.sql`, then `007`, `008`, `009`, `010` (`001`, `002`, `004` and `005` are not needed).
 - Supabase rejects some email domains (it checks they can receive mail). `netsight.lv` was refused by a new project; the test project used `example.com`. A project's domain must never change after its first signup.
 - Authentication → Sign In / Providers → Email: **Enable Email provider = on**, **Confirm email = off**. Otherwise sign-up fails (usernames map to addresses that cannot confirm) or hits the mailer's rate limit.
 
@@ -76,5 +79,6 @@ npm run build
 ```
 
 The build refuses a service key. Only the public publishable/anon key may go in the app.
+- Photos: the bucket is still public so the website keeps working; anonymous users can no longer list file names, and names are random. A fully private bucket with signed URLs needs the website changed too.
 - The map is not used in boat mode yet. When it is, do not use `tile.openstreetmap.org` from an app: its [tile policy](https://operations.osmfoundation.org/policies/tiles/) wants an identifying User-Agent and restricts app use. Use a tile provider with a key.
 - The buoy telemetry endpoint is unauthenticated. Fix it once the hardware and its protocol are known.
