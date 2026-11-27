@@ -38,6 +38,10 @@ The **Map** button (home screen, every role) opens an interactive OpenStreetMap 
   ```
 - **A new project has no shoreline, so no red lines.** Draw one: `npm run site` builds the website against your test project (use the same `NETSIGHT_*` variables as the app build) and serves it at <http://localhost:5174/login.html>; sign in as an admin and use Admin → Shore.
 
+### Demo data for a test project
+
+`supabase/demo/demo_data.sql` fills a **test** project (migrations applied, the four test accounts present) with: a real lake outline (Ķīšezers, Riga; from OpenStreetMap, © OpenStreetMap contributors, ODbL, simplified to about 25 m) so the red 50 m line appears; ten sample reports (undecided, accepted, a registered one, a resolved one); two registered nets; a patrol question to `tboat1`; and two "gone" votes that close one buoy through the real database rule. Run it in the SQL editor. `supabase/demo/demo_cleanup.sql` removes all of it. Everything is marked `demo`. The samples are around 57.02 N, 24.17 E: if you are testing elsewhere, pan the map there, or the data can be regenerated near you.
+
 ## Run it on your computer (nothing to install but Node)
 
 ```bash
