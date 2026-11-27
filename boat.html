@@ -6,7 +6,9 @@
   <meta name="theme-color" content="#FFFFFF">
   <title>NetSight</title>
   <link rel="icon" href="assets/netsight-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/vendor/leaflet.css">
   <link rel="stylesheet" href="css/boat.css">
+  <link rel="stylesheet" href="css/boatmap.css">
 
   <script src="js/config.js"></script>
 </head>
@@ -39,6 +41,10 @@
       <div class="stack">
         <button type="button" class="btn btn--hero btn--primary" data-go="report-type" data-role-show="user patrol admin">
           <span class="btn__icon">＋</span>Report gear
+        </button>
+
+        <button type="button" class="btn btn--big" data-go="map" data-role-show="user patrol admin">
+          <span class="btn__icon">🗺️</span>Map
         </button>
 
         <button type="button" class="btn btn--big" data-go="nets" data-role-show="user">
@@ -179,6 +185,17 @@
     </section>
 
 
+    <!-- ===================================================== map -->
+    <section class="screen screen--map" id="screen-map" data-title="Map">
+      <div class="mapwrap">
+        <div id="boat-map" aria-label="Map"></div>
+        <div class="me-bar" id="me-bar" data-state="idle" role="status">
+          <span class="me-bar__dot"></span><span id="me-readout">Looking for GPS…</span>
+        </div>
+        <button type="button" class="map-fab" id="btn-centre"><span class="btn__icon">◎</span>Centre on me</button>
+      </div>
+    </section>
+
     <!-- ===================================================== messages, phone test -->
     <section class="screen" id="screen-my-reports" data-title="My reports">
       <div class="stack"><div class="list" id="myreports-list"></div></div>
@@ -193,6 +210,11 @@
     </section>
 
   </main>
+
+  <!-- A tapped pin on the map: details and one big action. -->
+  <section class="sheet" id="pin-sheet" hidden>
+    <div class="sheet__box" id="pin-sheet-body"></div>
+  </section>
 
   <!-- "Is it still there?": appears over any calm screen when a boat is close to a
        reported object in daylight. See js/stillthere.js. -->
@@ -217,6 +239,7 @@
 
   <div class="toast" id="toast" hidden role="alert"></div>
 
+  <script src="js/vendor/leaflet.js"></script>
   <script src="js/status.js"></script>
   <script src="js/devices.js"></script>
   <script src="js/gear.js"></script>
@@ -225,6 +248,8 @@
   <script src="js/cases.js"></script>
   <script src="js/identify.js"></script>
   <script src="js/stillthere.js"></script>
+  <script src="js/map.js"></script>
+  <script src="js/boatmap.js"></script>
   <script src="js/shore.js"></script>
   <script src="js/location.js"></script>
   <script src="js/registry.js"></script>

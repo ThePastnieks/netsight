@@ -15,7 +15,7 @@
   const SEND_DELAY_MS = 5000; // report is sent after this unless undone
   const GPS_REFRESH_MS = 4000;
   // Screens where a gear-check question may appear. Never mid-report or mid-decision.
-  const CALM = ['home', 'nets', 'cases', 'identify', 'my-reports'];
+  const CALM = ['home', 'nets', 'cases', 'identify', 'my-reports', 'map'];
 
   const CLASSES = {
     buoy:  { label: 'Buoy',  line: false },
@@ -30,6 +30,7 @@
 
   let session = null;
   let stack = ['home'];
+  let currentScreen = 'home';
   let gps = null;            // { lat, lon, accuracy, at } or { error }
   let gpsTimer = null;
   let draft = null;          // the report being made
@@ -45,6 +46,8 @@
   // ============================================================ navigation
 
   function show(id) {
+    if (currentScreen === 'map' && id !== 'map') BoatMap.leave();
+    currentScreen = id;
     document.querySelectorAll('.screen').forEach(s => s.classList.toggle('is-active', s.id === 'screen-' + id));
     const el = $('screen-' + id);
     $('bar-title').textContent = (el && el.dataset.title) || 'NetSight';
@@ -87,6 +90,7 @@
     if (id === 'nets') renderNets();
     if (id === 'net-new') { startGpsLoop(); renderNetNew(); }
     if (id === 'cases') { refreshGps(); loadCases(); }
+    if (id === 'map') { startGpsLoop(); BoatMap.enter(); }
     if (id === 'my-reports') renderMyReports();
     if (id === 'diag') renderDiag();
     if (id === 'identify') $('id-code').value = '';
@@ -179,6 +183,7 @@
     const active = stack[stack.length - 1];
     if (active === 'report-place') renderPlace();
     if (active === 'net-new') renderNetNew();
+    if (active === 'map') BoatMap.updatePosition(gps);
   }
 
   function startGpsLoop() {
@@ -1011,6 +1016,39 @@
     };
   }
 
+  // ================================================================ map sheet
+
+  // A pin was tapped on the map. Staff get the case; everyone gets the facts and a way
+  // to see it in their own map app.
+  function showPinSheet(s) {
+    const staff = session.role === 'patrol' || session.role === 'admin';
+    const label = (CLASSES[s.user_class] || {}).label || 'Gear';
+    const gear = s.registry_match && s.registry_id ? GearModule.findByCode(s.registry_id) : null;
+    const status = (StatusModule.LABELS || {})[s.status] || s.status;
+
+    $('pin-sheet-body').innerHTML =
+      '<div class="card__top"><span class="grow">' + esc(label) + '</span><span class="chip">' + esc(status) + '</span></div>' +
+      '<div class="kv"><b>' + esc(ageOf(s.created_at)) + (distanceText(s) ? ' · ' + esc(distanceText(s)) : '') + '</b>' +
+        '<span>' + (gear ? esc(gear.ownerName) + ' · ' + esc(gear.code) : (s.registry_match ? 'Registered' : 'Nobody registered it')) +
+        (s.last_confirmed_at ? ' · still there ' + esc(ageOf(s.last_confirmed_at)) : '') + '</span></div>' +
+      (s.note ? '<div class="kv"><span>' + esc(s.note) + '</span></div>' : '') +
+      (staff ? '<button type="button" class="btn btn--hero btn--primary" id="sheet-case">Open case</button>' : '') +
+      '<button type="button" class="btn btn--big" id="sheet-maps"><span class="btn__icon">📍</span>Open in maps</button>' +
+      '<button type="button" class="btn btn--quiet" id="sheet-close">Close</button>';
+
+    $('pin-sheet').hidden = false;
+    $('sheet-close').onclick = closePinSheet;
+    $('sheet-maps').onclick = () => Native.openMap(s.lat, s.lon, label);
+    const open = $('sheet-case');
+    if (open) open.onclick = () => {
+      closePinSheet();
+      if (!allCases.find(x => x.id === s.id)) allCases.push(s);
+      openCase(s.id);
+    };
+  }
+
+  function closePinSheet() { $('pin-sheet').hidden = true; }
+
   // =============================================================== identify
 
   function showIdentification(result) {
@@ -1087,6 +1125,8 @@
     $('tab-collect').onclick = () => { casesTab = 'collect'; renderCases(); };
     $('tab-closed').onclick = () => { casesTab = 'closed'; renderCases(); };
     $('btn-diag').onclick = () => go('diag');
+    $('btn-centre').onclick = () => { if (!BoatMap.centre()) toast('No GPS fix yet. Try again in a moment.'); };
+    $('pin-sheet').addEventListener('click', e => { if (e.target.id === 'pin-sheet') closePinSheet(); });
 
     $('undo-btn').onclick = undoPending;
     $('btn-signout').onclick = () => Auth.logout();
@@ -1106,6 +1146,7 @@
 
     bind();
     initCasePickers();
+    BoatMap.init({ onPin: showPinSheet });
     show('home');
     startGearChecks();
   }

@@ -17,6 +17,7 @@ import { rmSync, mkdirSync, cpSync, readFileSync, writeFileSync, readdirSync, ex
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { build } from 'esbuild';
+import { overrideConfig, describeOverrides } from './config-overrides.mjs';
 
 const root = join(dirname(fileURLToPath(import.meta.url)), '..');
 const www = join(root, 'www');
@@ -30,7 +31,7 @@ for (const dir of ['assets', 'css', 'data']) {
   if (existsSync(join(root, dir))) cpSync(join(root, dir), join(www, dir), { recursive: true });
 }
 
-const skip = new Set(['admin.js', 'patrol.js', 'app.js', 'map.js', 'ui.js']);
+const skip = new Set(['admin.js', 'patrol.js', 'app.js', 'ui.js']);
 for (const f of readdirSync(join(root, 'js'))) {
   if (f.endsWith('.js') && !skip.has(f)) cpSync(join(root, 'js', f), join(www, 'js', f));
 }
@@ -38,6 +39,10 @@ for (const f of readdirSync(join(root, 'js'))) {
 // Vendored libraries, pinned by package.json.
 cpSync(join(root, 'node_modules/@supabase/supabase-js/dist/umd/supabase.js'), join(www, 'js/vendor/supabase.js'));
 cpSync(join(root, 'node_modules/qrcode-generator/qrcode.js'), join(www, 'js/vendor/qrcode.js'));
+cpSync(join(root, 'node_modules/leaflet/dist/leaflet.js'), join(www, 'js/vendor/leaflet.js'));
+mkdirSync(join(www, 'css', 'vendor'), { recursive: true });
+cpSync(join(root, 'node_modules/leaflet/dist/leaflet.css'), join(www, 'css/vendor/leaflet.css'));
+cpSync(join(root, 'node_modules/leaflet/dist/images'), join(www, 'css/vendor/images'), { recursive: true });
 
 // Native plugins -> one file exposing window.Native.
 await build({
@@ -80,27 +85,11 @@ if (local) {
   writeFileSync(cfgPath, cfg);
 }
 
-// Point the build at another Supabase project, e.g. a test copy.
-const overrideUrl = process.env.NETSIGHT_SUPABASE_URL;
-const overrideKey = process.env.NETSIGHT_SUPABASE_KEY;
-if (overrideUrl || overrideKey) {
-  if (!overrideUrl || !overrideKey) throw new Error('Set both NETSIGHT_SUPABASE_URL and NETSIGHT_SUPABASE_KEY');
-  if (/service_role/i.test(overrideKey) || /"role":"service/.test(Buffer.from(overrideKey.split('.')[1] || '', 'base64').toString())) {
-    throw new Error('That looks like a service key. Only the public publishable/anon key may go in the app.');
-  }
+// Optional overrides from environment variables (another Supabase project, email
+// domain, map tile source). See scripts/config-overrides.mjs.
+{
   const cfgPath = join(www, 'js/config.js');
-  writeFileSync(cfgPath, readFileSync(cfgPath, 'utf8')
-    .replace(/SUPABASE_URL:\s*'[^']*'/, "SUPABASE_URL: '" + overrideUrl + "'")
-    .replace(/SUPABASE_ANON_KEY:\s*'[^']*'/, "SUPABASE_ANON_KEY: '" + overrideKey + "'"));
-}
-
-// The email domain usernames are expanded to. Supabase checks that the domain can
-// receive mail, so a test project may need a different one. It must never change
-// after the first signup in a project.
-if (process.env.NETSIGHT_AUTH_DOMAIN) {
-  const cfgPath = join(www, 'js/config.js');
-  writeFileSync(cfgPath, readFileSync(cfgPath, 'utf8')
-    .replace(/AUTH_EMAIL_DOMAIN:\s*'[^']*'/, "AUTH_EMAIL_DOMAIN: '" + process.env.NETSIGHT_AUTH_DOMAIN + "'"));
+  writeFileSync(cfgPath, overrideConfig(readFileSync(cfgPath, 'utf8')));
 }
 
 // Fail loudly if a CDN reference survived: the app would break offline-ish.
@@ -111,4 +100,4 @@ for (const page of ['login.html', 'boat.html']) {
   }
 }
 
-console.log('www/ built' + (local ? ' (LOCAL mode: no Supabase)' : (overrideUrl ? ' (cloud mode, project override: ' + overrideUrl + ')' : ' (cloud mode)')));
+console.log('www/ built' + (local ? ' (LOCAL mode: no Supabase)' : ' (cloud mode)') + describeOverrides());

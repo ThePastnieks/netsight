@@ -5,7 +5,8 @@ import { readFile } from 'node:fs/promises';
 import { join, extname, dirname, normalize } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const www = join(dirname(fileURLToPath(import.meta.url)), '..', 'www');
+// DIR (default www) and PORT (default 5173) can be set from the environment.
+const www = join(dirname(fileURLToPath(import.meta.url)), '..', process.env.DIR || 'www');
 const port = Number(process.env.PORT) || 5173;
 const types = { '.html': 'text/html', '.js': 'text/javascript', '.css': 'text/css', '.svg': 'image/svg+xml',
   '.png': 'image/png', '.jpg': 'image/jpeg', '.csv': 'text/csv', '.json': 'application/json', '.webmanifest': 'application/manifest+json' };

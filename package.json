@@ -10,7 +10,9 @@
     "web:local": "NETSIGHT_LOCAL=1 node scripts/build-www.mjs && node scripts/serve.mjs",
     "sync": "node scripts/build-www.mjs && cap sync",
     "android": "node scripts/build-www.mjs && cap sync android && cap open android",
-    "ios": "node scripts/build-www.mjs && cap sync ios && cap open ios"
+    "ios": "node scripts/build-www.mjs && cap sync ios && cap open ios",
+    "site": "node scripts/build-site.mjs && DIR=www-site PORT=5174 node scripts/serve.mjs",
+    "build:site": "node scripts/build-site.mjs"
   },
   "dependencies": {
     "@capacitor-mlkit/barcode-scanning": "8.2.2",
@@ -21,6 +23,7 @@
     "@capacitor/geolocation": "8.2.5",
     "@capacitor/haptics": "8.0.2",
     "@supabase/supabase-js": "2.119.2",
+    "leaflet": "1.9.4",
     "qrcode-generator": "1.4.4"
   },
   "devDependencies": {

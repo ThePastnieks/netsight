@@ -24,6 +24,20 @@ Like Waze asking whether the police are still there. While the app is open and a
 
 Settings are in `js/boat-config.js` (`CONFIG.STILL_THERE`). The "2 votes" number is in the SQL.
 
+## The map
+
+The **Map** button (home screen, every role) opens an interactive OpenStreetMap map: pan, pinch to zoom, tap a pin for details (staff get **Open case**).
+
+- **You** are a dot with an accuracy circle. It is green inside the permitted water, red outside ("Not on the drawn water"), blue when no shoreline has been drawn. **Centre on me** brings you back; the map never moves by itself after the first GPS fix.
+- **The red line** is the 50 m limit, drawn from the shoreline an administrator drew in the website (Admin → Shore). It comes from that data, not from the tiles, so it looks the same with any tile source.
+- **Reports** are pins coloured by status; nets show as lines. Registered nets: yours in thick blue, others dashed green. Open reports stay on the map day and night; only the "still there?" questions pause at night. Resolved or declined reports are not shown.
+- **Tiles are OpenStreetMap, for testing and presentations only.** Its [usage policy](https://operations.osmfoundation.org/policies/tiles/) forbids heavy and commercial use and may block app traffic. To switch (for example to MapTiler, free key) build with:
+  ```bash
+  NETSIGHT_TILE_URL='https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key=YOUR_KEY' \
+  NETSIGHT_TILE_ATTRIBUTION='&copy; MapTiler &copy; OpenStreetMap contributors' npm run build
+  ```
+- **A new project has no shoreline, so no red lines.** Draw one: `npm run site` builds the website against your test project (use the same `NETSIGHT_*` variables as the app build) and serves it at <http://localhost:5174/login.html>; sign in as an admin and use Admin → Shore.
+
 ## Run it on your computer (nothing to install but Node)
 
 ```bash
