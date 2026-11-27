@@ -2,7 +2,7 @@
 
 // Build stamp — bump this on every release. It is used to bust browser caches
 // (asset query strings) and to purge stale service workers.
-const NETSIGHT_BUILD = '2026.11.29.4';
+const NETSIGHT_BUILD = '2026.11.30.4';
 
 const CONFIG = {
   BUILD: NETSIGHT_BUILD,
@@ -116,6 +116,11 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.CONFIG = CONFIG;
 }
+
+
+
+
+
 
 
 

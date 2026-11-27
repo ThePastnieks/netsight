@@ -24,6 +24,25 @@ const Shore = (function() {
     freehand: 'Freehand'
   };
 
+  // What "permitted" means inside a shape. See ruleOf().
+  const RULES = {
+    inward: {
+      id: 'inward',
+      label: 'Away from the bank',
+      hint: 'Gear must be at least this far inside the water'
+    },
+    band: {
+      id: 'band',
+      label: 'Along the bank',
+      hint: 'Gear may sit in the strip next to the bank, and no further out'
+    },
+    inside: {
+      id: 'inside',
+      label: 'Anywhere in the shape',
+      hint: 'No distance rule — the whole drawn area is permitted'
+    }
+  };
+
   let shapes = null;
 
   // ---------------------------------------------------------------- storage
@@ -79,7 +98,7 @@ const Shore = (function() {
 
       const { data, error } = await client
         .from('shore_shapes')
-        .select('id, kind, name, coords, lat, lon, radius, created_at')
+        .select('id, kind, name, coords, lat, lon, radius, rule, distance_m, created_at')
         .order('created_at', { ascending: true });
 
       if (error) {
@@ -96,6 +115,8 @@ const Shore = (function() {
         lat: row.lat,
         lon: row.lon,
         radius: row.radius,
+        rule: row.rule || 'inward',
+        distance: Number.isFinite(row.distance_m) ? row.distance_m : undefined,
         createdAt: row.created_at
       }));
 
@@ -149,9 +170,11 @@ const Shore = (function() {
         lat: clean.lat ?? null,
         lon: clean.lon ?? null,
         radius: clean.radius ?? null,
+        rule: clean.rule || 'inward',
+        distance_m: clean.distance ?? CONFIG.DEVICES.minShoreMetres,
         created_by: me ? me.id : null
       })
-      .select('id, kind, name, coords, lat, lon, radius, created_at')
+      .select('id, kind, name, coords, lat, lon, radius, rule, distance_m, created_at')
       .single();
 
     if (error) return { ok: false, message: error.message };
@@ -189,7 +212,9 @@ const Shore = (function() {
         coords: merged.coords || null,
         lat: merged.lat ?? null,
         lon: merged.lon ?? null,
-        radius: merged.radius ?? null
+        radius: merged.radius ?? null,
+        rule: merged.rule || 'inward',
+        distance_m: merged.distance ?? CONFIG.DEVICES.minShoreMetres
       })
       .eq('id', id);
 
@@ -235,10 +260,28 @@ const Shore = (function() {
   }
   // ------------------------------------------------------------ validation
 
+  // A zone's rule decides what "permitted" means inside it.
+  //
+  //   inward  at least distance from the bank   — the original 50 m rule
+  //   band    at most distance from the bank    — the strip along the shore
+  //   inside  anywhere in the shape             — no distance rule
+  //
+  // Anything unrecognised falls back to inward, so a shape drawn before rules
+  // existed keeps behaving exactly as it did.
+  function ruleOf(shape) {
+    const rule = RULES[shape && shape.rule] ? shape.rule : 'inward';
+    const raw = Number(shape && shape.distance);
+    const distance = Number.isFinite(raw) && raw >= 0
+      ? Math.min(raw, 2000)
+      : CONFIG.DEVICES.minShoreMetres;
+    return { rule, distance };
+  }
+
   function normalise(shape) {
     if (!shape || !KINDS[shape.kind]) return null;
 
     const name = String(shape.name || '').trim().slice(0, 60) || KINDS[shape.kind];
+    const { rule, distance } = ruleOf(shape);
 
     if (shape.kind === 'circle') {
       const lat = Number(shape.lat);
@@ -248,7 +291,7 @@ const Shore = (function() {
       if (!Number.isFinite(lat) || !Number.isFinite(lon)) return null;
       if (!Number.isFinite(radius) || radius < 10) return null;
 
-      return { id: shape.id, kind: 'circle', name, lat, lon, radius: Math.round(radius) };
+      return { id: shape.id, kind: 'circle', name, lat, lon, radius: Math.round(radius), rule, distance };
     }
 
     const coords = Array.isArray(shape.coords)
@@ -267,7 +310,7 @@ const Shore = (function() {
 
     if (Math.abs(area(coords)) < 1e-9) return null;
 
-    return { id: shape.id, kind: shape.kind, name, coords };
+    return { id: shape.id, kind: shape.kind, name, coords, rule, distance };
   }
 
   // -------------------------------------------------------------- geometry
@@ -447,14 +490,62 @@ const Shore = (function() {
     return { kind: 'polygon', coords };
   }
 
-  // Every permitted area, paired with the shape it came from.
-  function permittedAreas() {
-    const limit = CONFIG.DEVICES.minShoreMetres;
+  // The outline of a shape as drawn, before any distance rule.
+  function outlineOf(shape) {
+    if (shape.kind === 'circle') {
+      return { kind: 'circle', lat: shape.lat, lon: shape.lon, radius: shape.radius };
+    }
+    return { kind: 'polygon', coords: shape.coords };
+  }
 
+  // Turns a zone back into a ring of points, so a band can be drawn as the
+  // outline with the inner zone cut out of it.
+  function ringOf(zone) {
+    if (!zone) return null;
+    if (zone.kind === 'circle') {
+      const R = 6371000;
+      const dLat = (zone.radius / R) * 180 / Math.PI;
+      const dLon = (zone.radius / (R * Math.cos(zone.lat * Math.PI / 180))) * 180 / Math.PI;
+      const pts = [];
+      for (let i = 0; i < 64; i++) {
+        const a = (i / 64) * 2 * Math.PI;
+        pts.push([zone.lat + dLat * Math.cos(a), zone.lon + dLon * Math.sin(a)]);
+      }
+      return pts;
+    }
+    return zone.coords;
+  }
+
+  // Every permitted area, ready to draw.
+  //
+  //   inward  the inner offset, as before
+  //   band    the outline with the inner offset cut out — a ring along the bank
+  //   inside  the outline itself
+  //
+  // Each carries its rule and distance, so the map can label it honestly instead
+  // of always saying "50 m from shore".
+  function permittedAreas() {
     return all()
       .map(shape => {
-        const zone = permittedOf(shape, limit);
-        return zone ? Object.assign({ source: shape.id, name: shape.name }, zone) : null;
+        const { rule, distance } = ruleOf(shape);
+        const outline = outlineOf(shape);
+        const base = { source: shape.id, name: shape.name, rule, distance };
+
+        if (rule === 'inside') {
+          return Object.assign(base, outline);
+        }
+
+        if (rule === 'inward') {
+          const zone = permittedOf(shape, distance);
+          return zone ? Object.assign(base, zone) : null;
+        }
+
+        // A band: the outer shape minus the inner offset. When the water is too
+        // narrow for the offset to exist, the whole shape is the band.
+        const inner = permittedOf(shape, distance);
+        const area = Object.assign(base, outline);
+        area.hole = inner ? ringOf(inner) : null;
+        return area;
       })
       .filter(Boolean);
   }
@@ -477,12 +568,12 @@ const Shore = (function() {
       };
     }
 
-    const limit = CONFIG.DEVICES.minShoreMetres;
-
-    // Inside any drawn water?
+    // Inside any drawn water? A point can be in several shapes at once
+    // (overlapping zones), and it is permitted if any one of them allows it.
     let onWater = false;
     let nearest = Infinity;
-    let inZone = false;
+    let allowedHere = false;
+    let refusal = null;
 
     for (const shape of list) {
       const inside = shape.kind === 'circle'
@@ -492,16 +583,25 @@ const Shore = (function() {
       if (!inside) continue;
 
       onWater = true;
-      nearest = Math.min(nearest, distanceToShape(lat, lon, shape));
 
-      const zone = permittedOf(shape, limit);
-      if (!zone) continue;
+      const d = distanceToShape(lat, lon, shape);
+      nearest = Math.min(nearest, d);
 
-      const inThisZone = zone.kind === 'circle'
-        ? haversine(lat, lon, zone.lat, zone.lon) <= zone.radius
-        : pointInPolygon(lat, lon, zone.coords);
+      const { rule, distance } = ruleOf(shape);
 
-      if (inThisZone) inZone = true;
+      // The rule is the whole of it:
+      //   inward  at least `distance` from the bank
+      //   band    at most  `distance` from the bank
+      //   inside  anywhere in the shape
+      const ok = rule === 'inside' ? true
+        : rule === 'inward' ? d >= distance
+        : d <= distance;
+
+      if (ok) {
+        allowedHere = true;
+      } else if (!refusal) {
+        refusal = { rule, distance, d };
+      }
     }
 
     if (!onWater) {
@@ -513,12 +613,22 @@ const Shore = (function() {
       };
     }
 
-    if (!inZone) {
+    if (!allowedHere) {
+      const r = refusal || {
+        rule: 'inward',
+        distance: CONFIG.DEVICES.minShoreMetres,
+        d: nearest
+      };
+
+      const reason = r.rule === 'band'
+        ? Math.round(r.d) + ' m from shore — no further than ' + r.distance + ' m here'
+        : Math.round(r.d) + ' m from shore — at least ' + r.distance + ' m required';
+
       return {
         allowed: false,
         onWater: true,
         shoreDistance: nearest,
-        reason: `${Math.round(nearest)} m from shore — at least ${limit} m required`
+        reason
       };
     }
 
@@ -526,7 +636,7 @@ const Shore = (function() {
       allowed: true,
       onWater: true,
       shoreDistance: nearest,
-      reason: `${Math.round(nearest)} m from shore`
+      reason: Math.round(nearest) + ' m from shore'
     };
   }
 
@@ -604,6 +714,9 @@ const Shore = (function() {
     clear,
     count,
     permittedOf,
+    RULES,
+    ruleOf,
+    outlineOf,
     permittedAreas,
     offsetInward,
     checkGeofence,
@@ -623,6 +736,11 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.Shore = Shore;
 }
+
+
+
+
+
 
 
 

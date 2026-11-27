@@ -611,7 +611,7 @@ const App = (function() {
         '    <span class="gear-item__code-value">' + escapeHtml(gear.code) + '</span>',
         '  </div>',
         '  <div class="gear-item__body">',
-        '    <span class="gear-item__label">' + escapeHtml(gear.label) + '</span>',
+        '    <span class="gear-item__label">' + escapeHtml(gear.label) + (gear.official ? ' <b class="official-tag">Official</b>' : '') + '</span>',
         '    <span class="gear-item__meta">',
         escapeHtml(gear.type),
         metres ? ' · ' + metres + ' m' : '',

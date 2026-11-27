@@ -165,9 +165,22 @@ create table if not exists public.shore_shapes (
   lat         double precision,         -- circle centre
   lon         double precision,
   radius      double precision,         -- circle radius, metres
+  -- How far from the bank gear may go. A channel is a band along the shore; a
+  -- lake is everything inside it. Both are legitimate, so it is per shape.
+  rule        text not null default 'inward'
+                check (rule in ('inward', 'band', 'inside')),
+  distance_m  integer not null default 50
+                check (distance_m >= 0 and distance_m <= 2000),
   created_by  uuid references public.profiles(id) on delete set null,
   created_at  timestamptz not null default now()
 );
+
+-- Adding the rule columns to a database that already has the table.
+alter table public.shore_shapes
+  add column if not exists rule text not null default 'inward'
+    check (rule in ('inward', 'band', 'inside')),
+  add column if not exists distance_m integer not null default 50
+    check (distance_m >= 0 and distance_m <= 2000);
 
 -- =============================================================== devices
 create table if not exists public.devices (
@@ -337,8 +350,12 @@ create table if not exists public.registered_gear (
   lat          double precision,
   lon          double precision,
   valid_until  timestamptz,
+  official     boolean not null default false,
   created_at   timestamptz not null default now()
 );
+
+alter table public.registered_gear
+  add column if not exists official boolean not null default false;
 
 create index if not exists idx_gear_owner on public.registered_gear(owner_id);
 create index if not exists idx_gear_code on public.registered_gear(code);
@@ -388,5 +405,7 @@ alter default privileges in schema public
 -- ============================================================ done
 -- Check it worked: Table Editor should list profiles, sightings, shore_shapes
 -- and devices.
+
+
 
 

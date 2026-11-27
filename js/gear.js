@@ -110,6 +110,7 @@ const GearModule = (function() {
       lat: row.lat,
       lon: row.lon,
       validUntil: row.valid_until,
+      official: !!row.official,
       createdAt: row.created_at
     };
   }
@@ -129,7 +130,7 @@ const GearModule = (function() {
 
       const { data, error } = await client
         .from('registered_gear')
-        .select('id, code, label, gear_type, owner_id, owner_name, span, lat, lon, valid_until, created_at')
+        .select('id, code, label, gear_type, owner_id, owner_name, span, lat, lon, valid_until, official, created_at')
         .order('created_at', { ascending: false });
 
       if (error) {
@@ -205,12 +206,17 @@ const GearModule = (function() {
       return { ok: false, message: 'That code is already registered' };
     }
 
+    // Official means a patrol or administrator registered it: someone is
+    // accountable for the gear, and a report near it is not a case.
+    const official = me.role === 'patrol' || me.role === 'admin';
+
     const clean = {
       code,
       label,
       type: gear.type || 'net',
       ownerId: me.id,
       ownerName: me.username,
+      official,
       span: gear.span || null,
       lat: gear.span ? (gear.span[0][0] + gear.span[1][0]) / 2 : (gear.lat ?? null),
       lon: gear.span ? (gear.span[0][1] + gear.span[1][1]) / 2 : (gear.lon ?? null),
@@ -235,12 +241,13 @@ const GearModule = (function() {
         gear_type: clean.type,
         owner_id: clean.ownerId,
         owner_name: clean.ownerName,
+        official: clean.official,
         span: clean.span,
         lat: clean.lat,
         lon: clean.lon,
         valid_until: clean.validUntil
       })
-      .select('id, code, label, gear_type, owner_id, owner_name, span, lat, lon, valid_until, created_at')
+      .select('id, code, label, gear_type, owner_id, owner_name, span, lat, lon, valid_until, official, created_at')
       .single();
 
     if (error) return { ok: false, message: error.message };
@@ -330,4 +337,7 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.GearModule = GearModule;
 }
+
+
+
 

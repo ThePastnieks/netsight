@@ -52,6 +52,10 @@ const Admin = (function() {
           setTimeout(() => {
             initShoreMap();
             if (shoreMap) shoreMap.invalidateSize();
+            // Re-read on every visit: another admin may have added or removed a
+            // shape since this tab was last opened.
+            renderShoreList();
+            renderShoreShapes();
           }, 60);
         }
       });
@@ -374,7 +378,7 @@ const Admin = (function() {
         '    <span class="gear-item__code-value">' + UIModule.escapeHtml(gear.code) + '</span>',
         '  </div>',
         '  <div class="gear-item__body">',
-        '    <span class="gear-item__label">' + UIModule.escapeHtml(gear.ownerName) + '</span>',
+        '    <span class="gear-item__label">' + UIModule.escapeHtml(gear.ownerName) + (gear.official ? ' <b class="official-tag">Official</b>' : '') + '</span>',
         '    <span class="gear-item__meta">',
         UIModule.escapeHtml(gear.label),
         metres ? ' · ' + metres + ' m' : '',
@@ -574,26 +578,37 @@ const Admin = (function() {
       }).addTo(draftLayer);
 
       // the offset, so the consequence is visible while editing
-      const zone = Shore.permittedOf(shape, limit);
+      const { rule, distance } = Shore.ruleOf(shape);
+      const zone = Shore.permittedOf(shape, distance);
       if (!zone) {
         L.polyline(pts, { color: '#E5484D', weight: 2, opacity: 0.5, interactive: false })
-          .bindTooltip('Too narrow for a ' + limit + ' m limit', { sticky: true })
+          .bindTooltip('Too narrow for a ' + distance + ' m limit', { sticky: true })
           .addTo(draftLayer);
         return;
       }
+
+      // "Anywhere inside" has no distance rule, so there is no limit line to
+      // draw — the outline already says everything.
+      if (rule === 'inside') return;
 
       const zpts = zone.kind === 'circle'
         ? circlePoints(zone.lat, zone.lon, zone.radius)
         : zone.coords;
 
-      L.polygon(zpts, {
+      // A band is the strip between the bank and the inner offset, so it is
+      // drawn as the outline with the inner cut out.
+      const draw = rule === 'band' ? [pts, zpts.slice().reverse()] : zpts;
+
+      L.polygon(draw, {
         color: '#E5484D',
         weight: 2.5,
         opacity: 0.95,
         fillColor: '#2FA36B',
-        fillOpacity: 0.1,
+        fillOpacity: rule === 'band' ? 0.22 : 0.1,
         interactive: false
-      }).addTo(draftLayer);
+      })
+        .bindTooltip(ruleLabel(rule, distance), { sticky: true })
+        .addTo(draftLayer);
     });
   }
 
@@ -654,16 +669,51 @@ const Admin = (function() {
     if (clear) clear.disabled = draft.length === 0 && !circleCentre;
   }
 
-  async function finishShape(shape) {
-    const limit = CONFIG.DEVICES.minShoreMetres;
+  // The rule form under the drawing tools. The distance only matters when the
+  // rule uses it, so it is hidden for "anywhere in the shape".
+  const RULE_HINTS = {
+    inward: 'Gear must be at least this far inside the water.',
+    band: 'Gear may sit in the strip this close to the bank, and no further out.',
+    inside: 'The whole drawn area is permitted. No distance rule.'
+  };
 
-    const zone = Shore.permittedOf(shape, limit);
-    if (!zone) {
-      UIModule.showToast(
-        `That shape is narrower than ${limit} m across — there is no legal water inside it`,
-        'error'
-      );
-      return;
+  function currentRule() {
+    const sel = document.getElementById('shore-rule');
+    const dist = document.getElementById('shore-distance');
+    const rule = sel && sel.value ? sel.value : 'inward';
+    const fallback = CONFIG.DEVICES.minShoreMetres;
+    const distance = dist && Number.isFinite(Number(dist.value))
+      ? Math.max(0, Math.min(2000, Number(dist.value)))
+      : fallback;
+    return { rule, distance };
+  }
+
+  function syncRuleUi() {
+    const { rule } = currentRule();
+    const row = document.getElementById('shore-distance-row');
+    const hint = document.getElementById('shore-rule-hint');
+
+    if (row) row.hidden = rule === 'inside';
+    if (hint) hint.textContent = RULE_HINTS[rule] || RULE_HINTS.inward;
+  }
+
+  async function finishShape(shape) {
+    const { rule, distance } = currentRule();
+    const withRule = Object.assign({}, shape, { rule, distance });
+
+    // "Away from the bank" needs water wider than twice the distance. The other
+    // two rules do not, so only check when it applies — telling someone a band
+    // is "too narrow" would be wrong.
+    if (rule === 'inward') {
+      const zone = Shore.permittedOf(withRule, distance);
+      if (!zone) {
+        UIModule.showToast(
+          'That shape is narrower than ' + distance + ' m across — there is no legal water inside it. ' +
+          'Try a smaller distance, or the band rule.',
+          'error'
+        );
+        return;
+      }
     }
 
     const name = await UIModule.prompt(
@@ -674,7 +724,7 @@ const Admin = (function() {
 
     if (name === null) return;
 
-    const result = await Shore.add(Object.assign({}, shape, { name: name || shape.name }));
+    const result = await Shore.add(Object.assign(withRule, { name: name || shape.name }));
     if (!result.ok) {
       UIModule.showToast(result.message, 'error');
       return;
@@ -705,6 +755,11 @@ const Admin = (function() {
     updateDrawUi();
   }
 
+function ruleLabel(rule, distance) {
+    if (rule === 'band') return 'within ' + distance + ' m of bank';
+    if (rule === 'inside') return 'anywhere inside';
+    return 'at least ' + distance + ' m from bank';
+  }
   function renderShoreList() {
     const host = document.getElementById('shore-list');
     const empty = document.getElementById('shore-empty');
@@ -727,7 +782,8 @@ const Admin = (function() {
     if (empty) empty.hidden = true;
 
     host.innerHTML = list.map(shape => {
-      const zone = Shore.permittedOf(shape, limit);
+      const { rule, distance } = Shore.ruleOf(shape);
+      const zone = Shore.permittedOf(shape, distance);
       const area = shape.kind === 'circle'
         ? Math.PI * shape.radius * shape.radius
         : Math.abs(Shore.area(shape.coords)) * 111320 * 111320 *
@@ -744,7 +800,7 @@ const Admin = (function() {
 
           <div class="shore-item__meta">
             <span>${Math.round(area / 10000)} ha</span>
-            <span>${zone ? 'limit drawn' : 'too narrow'}</span>
+            <span>${UIModule.escapeHtml(ruleLabel(rule, distance))}</span>
           </div>
 
           <div class="shore-item__actions">
@@ -807,6 +863,10 @@ const Admin = (function() {
   }
 
   function bindShore() {
+    document.getElementById('shore-rule')?.addEventListener('change', syncRuleUi);
+    document.getElementById('shore-distance')?.addEventListener('input', syncRuleUi);
+    syncRuleUi();
+
     document.querySelectorAll('[data-tool]').forEach(btn => {
       btn.addEventListener('click', () => {
         document.querySelectorAll('[data-tool]').forEach(b => b.classList.remove('is-active'));
@@ -1219,6 +1279,10 @@ const Admin = (function() {
 
 document.addEventListener('DOMContentLoaded', () => Admin.init());
 window.Admin = Admin;
+
+
+
+
 
 
 

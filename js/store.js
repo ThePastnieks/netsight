@@ -215,116 +215,23 @@ const StoreModule = (function() {
   // Demo mode: use localStorage for offline persistence
   const DEMO_STORAGE_KEY = 'netsight_sightings';
 
-  // Helper function to create simple colored placeholder images as data URLs
-  // Using base64 encoding for maximum browser compatibility
-  function createPlaceholderDataUrl(color, label) {
-    const svg = `<svg xmlns="${'http://www.w3.org/2000/svg'}" width="400" height="300" viewBox="0 0 400 300"><rect width="400" height="300" fill="${color}"></rect><text x="200" y="150" font-family="Arial,sans-serif" font-size="24" fill="white" text-anchor="middle" font-weight="bold">${label}</text></svg>`;
-    return 'data:image/svg+xml;base64,' + btoa(svg);
-  }
 
-  // Initial demo sightings for new installations
-  // Using data URLs for placeholder images in demo mode
-  const DEMO_SIGHTINGS = [
-    {
-      id: 'demo-1',
-      created_at: new Date(Date.now() - 86400000 * 3).toISOString(),
-      photo_url: createPlaceholderDataUrl('#FF6B35', 'Buoy'),
-      lat: 56.9496,
-      lon: 24.1052,
-      accuracy_m: 15,
-      detected_class: 'buoy',
-      confidence: 0.88,
-      user_class: 'buoy',
-      registry_id: null,
-      registry_match: false,
-      status: 'new',
-      report_reason: null,
-      note: 'Bright orange buoy anchored near the pier'
-    },
-    {
-      id: 'demo-2',
-      created_at: new Date(Date.now() - 86400000 * 5).toISOString(),
-      photo_url: createPlaceholderDataUrl('#4CAF50', 'Net'),
-      lat: 56.9582,
-      lon: 24.1125,
-      accuracy_m: 20,
-      detected_class: 'net',
-      confidence: 0.75,
-      user_class: 'net',
-      registry_id: 'R-002',
-      registry_match: true,
-      status: 'checked',
-      report_reason: null,
-      note: 'Gillnet deployed by Fisher A'
-    },
-    {
-      id: 'demo-3',
-      created_at: new Date(Date.now() - 86400000 * 10).toISOString(),
-      photo_url: createPlaceholderDataUrl('#2196F3', 'Trap'),
-      lat: 56.9701,
-      lon: 24.1180,
-      accuracy_m: 10,
-      detected_class: 'trap',
-      confidence: 0.82,
-      user_class: 'trap',
-      registry_id: 'R-003',
-      registry_match: true,
-      status: 'resolved',
-      report_reason: null,
-      note: 'Trap at location R-003'
-    },
-    {
-      id: 'demo-4',
-      created_at: new Date(Date.now() - 86400000 * 1).toISOString(),
-      photo_url: createPlaceholderDataUrl('#9E9E9E', 'Float'),
-      lat: 56.9540,
-      lon: 24.1020,
-      accuracy_m: 8,
-      detected_class: 'float',
-      confidence: 0.70,
-      user_class: 'float',
-      registry_id: null,
-      registry_match: false,
-      status: 'reported',
-      report_reason: 'unmarked',
-      note: 'Unknown float marker - needs investigation'
-    },
-    {
-      id: 'demo-5',
-      created_at: new Date(Date.now() - 86400000 * 14).toISOString(),
-      photo_url: createPlaceholderDataUrl('#FF6B35', 'Buoy 2'),
-      lat: 56.9800,
-      lon: 24.1500,
-      accuracy_m: 25,
-      detected_class: 'buoy',
-      confidence: 0.85,
-      user_class: 'buoy',
-      registry_id: 'R-005',
-      registry_match: true,
-      status: 'new',
-      report_reason: null,
-      note: 'Buoy from Fisher C, 2km from dock'
-    }
-  ];
+  // No seeded sightings. A map that shows gear nobody reported is a map that
+  // lies: a patrol cannot tell a demo pin from a real one, and the first thing
+  // anyone does is try to act on it. An empty map is honest; demo data is not.
+  const DEMO_SIGHTINGS = [];
 
   function getDemoSightings() {
     try {
       const stored = localStorage.getItem(DEMO_STORAGE_KEY);
-      if (stored) {
-        const parsed = JSON.parse(stored);
-        // Ensure all sightings have valid photo URLs
-        return parsed.map(s => {
-          if (!s.photo_url || s.photo_url.trim() === '') {
-            s.photo_url = createPlaceholderDataUrl('#FF6B35', s.user_class || 'sighting');
-          }
-          return s;
-        });
-      }
-      // Return initial demo data for new users
-      return DEMO_SIGHTINGS.map(s => ({ ...s }));
-    } catch {
-      return DEMO_SIGHTINGS.map(s => ({ ...s }));
+      // Return them as they are. A report with no photo has no photo —
+      // inventing a coloured rectangle so the card looks full is a small lie
+      // that makes a real photo impossible to tell from a placeholder.
+      if (stored) return JSON.parse(stored);
+    } catch (err) {
+      console.warn('Could not read stored sightings:', err);
     }
+    return DEMO_SIGHTINGS.map(s => ({ ...s }));
   }
 
   function saveDemoSightings(sightings) {

@@ -499,11 +499,23 @@ const MapModule = (function() {
       }
     });
 
-    // The 50 m limit, offset inward.
+    // The permitted water itself. A band is drawn as the outline with the inner
+    // zone cut out, so what you see is exactly what the rule permits.
     Shore.permittedAreas().forEach(area => {
-      const pts = area.kind === 'circle'
+      const outer = area.kind === 'circle'
         ? shapeLatLngs({ kind: 'circle', lat: area.lat, lon: area.lon, radius: area.radius })
         : area.coords;
+
+      // Leaflet wants a hole as [outerRing, innerRing] with the inner reversed.
+      const pts = area.hole && area.hole.length
+        ? [outer, area.hole.slice().reverse()]
+        : outer;
+
+      const label = area.rule === 'band'
+        ? area.name + ' · within ' + area.distance + ' m of the bank'
+        : area.rule === 'inside'
+          ? area.name + ' · anywhere inside'
+          : area.name + ' · at least ' + area.distance + ' m from shore';
 
       // A wide translucent pass under the crisp line: readable over pale water
       // and dark tiles alike, without a hard shadow.
@@ -527,10 +539,9 @@ const MapModule = (function() {
         lineJoin: 'round',
         interactive: false
       })
-        .bindTooltip(`${area.name} · ${limit} m from shore`, { sticky: true })
+        .bindTooltip(label, { sticky: true })
         .addTo(zoneLayer);
     });
-
     zoneLayer.addTo(map);
     return true;
   }

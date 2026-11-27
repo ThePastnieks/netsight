@@ -224,11 +224,14 @@ Every report takes an optional photo and a description.
 
 ## Water Patrol
 
-`patrol.html` — two tabs, not four, and every control is at least 56 px tall.
+`patrol.html` — three tabs, and every control is at least 56 px tall.
 That is not decoration: in November a wet thumb misses a 32 px button, and the
 person holding the phone is standing in a boat.
 
 ### Cases
+
+There is also a **Map** tab for when a picture beats a list: the drawn water, the
+registered nets, and every report pin in one view.
 
 One card per report, with two buttons: **Accept** and **Not gear**.
 
@@ -247,8 +250,11 @@ Declining asks why, and the reasons are the ones that actually happen:
 | Outside our water | Someone else looks after it |
 
 Declining is not a dead end — it closes the case with a reason, so the list stops
-filling with bottles. Tap a card to read the description and reply to the
-reporter.
+filling with bottles.
+
+Tap a card to read the description, see the photo, and **reply to the
+reporter**. The thread is two-way: the reporter sees the question when they
+open their report and answers there.
 
 ### Identify
 
@@ -301,6 +307,29 @@ only way in.
 No map tab. The cases are the work; a map you have to pan is not. No settings
 tab — the theme and sign-out are in the header. No delete — that is the admin's
 job, and it is irreversible.
+
+## Zone rules
+
+A permitted zone is not always "50 m in from the bank". Some water is a channel
+where the legal strip is the band along the shore. So each drawn shape carries
+its own rule, set when it is drawn in **Admin → Shore**:
+
+| Rule | Permitted |
+|---|---|
+| **Away from the bank** | at least *distance* m inside the water |
+| **Along the bank** | within *distance* m of the bank, and no further out |
+| **Anywhere in the shape** | the whole drawn area, no distance rule |
+
+Distance defaults to 50 m and is per shape. The map draws exactly what the rule
+allows: a band appears as a ring, with the inner zone cut out.
+
+## Official nets
+
+A net registered by Water Patrol or an administrator is **official** — set from
+the account's role at registration, never chosen by the client. It carries an
+`Official` tag everywhere it appears, and a report near it reads as legal gear
+rather than a case. A net registered by an ordinary user is a normal
+registration: the owner is known, but nobody has vouched for it.
 
 ## Registered nets
 
@@ -378,7 +407,7 @@ js/
   auth.js                  Accounts: Supabase Auth or local, roles, guards
   shore.js                 Hand-drawn shoreline, 50 m offset, geofence
   devices.js               Buoy fleet: telemetry, alerts
-  patrol.js                Water Patrol: cases, decisions, identify
+  patrol.js                Water Patrol: cases, map, decisions, identify
   admin.js                 Points, devices, nets, shore drawing, accounts
   app.js                   Wiring and user flows
 data/registry.csv          Registered gear
@@ -416,6 +445,7 @@ Supabase provides Postgres, Auth and Storage. Everything the app needs is in
 | `004_grants.sql` | table privileges, if an older copy skipped them |
 | `005_registered_gear.sql` | the nets table alone, for an existing database |
 | `006_case_decisions.sql` | severity, verdict, decline reason, the conversation |
+| `007_zone_rules_and_official_gear.sql` | per-zone rules and the official flag |
 
 Run `003` on a fresh project and the app is fully wired. Setup steps:
 [docs/SETUP.md](docs/SETUP.md).
@@ -441,6 +471,9 @@ FileReader, fetch, `color-mix()` (graceful fallback), CSS Grid.
 ## License
 
 MIT — prototype for demonstration purposes.
+
+
+
 
 
 

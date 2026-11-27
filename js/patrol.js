@@ -57,6 +57,7 @@ const Patrol = (function() {
 
     renderCases();
     renderCounts();
+    if (patrolMap) { MapModule.renderSightings(cases); paintGearOnMap(); }
   }
 
   function renderCounts() {
@@ -85,6 +86,16 @@ const Patrol = (function() {
         });
 
         document.querySelector('.screen__body').scrollTop = 0;
+
+        if (btn.dataset.tab === 'map') {
+          const m = ensureMap();
+          if (m) {
+            setTimeout(() => {
+              m.invalidateSize();
+              paintGearOnMap();
+            }, 80);
+          }
+        }
       });
     });
   }
@@ -148,6 +159,7 @@ const Patrol = (function() {
       return '<span class="case-owner case-owner--' + (expired ? 'warn' : 'ok') + '">' +
         UIModule.escapeHtml(gear.ownerName) +
         ' · ' + UIModule.escapeHtml(gear.code) +
+        (gear.official ? ' · <b>Official</b>' : '') +
         (expired ? ' · expired' : '') + '</span>';
     }
 
@@ -187,7 +199,10 @@ const Patrol = (function() {
     // obvious and the cards are few.
     host.querySelectorAll('[data-open]').forEach(el => {
       el.addEventListener('click', e => {
-        if (e.target.closest('button')) return;
+        // Only a tap on the card's own surface toggles it. Anything inside the
+        // expanded half — the message field most of all — must not collapse the
+        // card underneath the person typing in it.
+        if (e.target.closest('button, input, textarea, select, a, .thread-input, .thread, .case-detail')) return;
         toggleExpanded(el.dataset.open);
       });
     });
@@ -637,6 +652,61 @@ const Patrol = (function() {
     host.classList.add('lightbox--visible');
   }
 
+// ------------------------------------------------------------- map tab
+
+  let patrolMap = null;
+
+  // Built the first time the tab is opened: Leaflet cannot measure a hidden
+  // container, and there is no reason to pay for a map nobody is looking at.
+  function ensureMap() {
+    const host = document.getElementById('patrol-map');
+    if (!host || patrolMap) {
+      if (patrolMap) setTimeout(() => patrolMap.invalidateSize(), 60);
+      return patrolMap;
+    }
+
+    patrolMap = MapModule.initMap('patrol-map', CONFIG.MAP_CENTER, CONFIG.MAP_ZOOM);
+    if (!patrolMap) return null;
+
+    MapModule.toggleZones(true);
+    MapModule.renderDevices(Devices.all());
+    MapModule.toggleDeviceLayer(true);
+    MapModule.renderSightings(cases);
+    MapModule.fitToWater();
+
+    const open = cases.filter(c => CaseModule.isOpen(c) && !c.verdict).length;
+    const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = String(n); };
+    set('m-total', cases.length);
+    set('m-open', open);
+    set('m-gear', GearModule.activeOnly().length);
+
+    return patrolMap;
+  }
+
+  // Draw registered nets on the map: a patrol needs to see whose gear is where
+  // before deciding that a line on the water is abandoned.
+  function paintGearOnMap() {
+    if (!patrolMap || typeof L === 'undefined') return;
+
+    if (patrolMap._gearLayer) patrolMap.removeLayer(patrolMap._gearLayer);
+    patrolMap._gearLayer = L.layerGroup().addTo(patrolMap);
+
+    GearModule.activeOnly().forEach(gear => {
+      if (!Array.isArray(gear.span) || gear.span.length !== 2) return;
+
+      const official = !!gear.official;
+
+      L.polyline(gear.span, {
+        color: official ? '#1FA6D8' : '#2FA36B',
+        weight: official ? 4 : 3,
+        opacity: 0.85,
+        dashArray: official ? null : '5 5'
+      })
+        .bindTooltip(gear.code + ' · ' + gear.ownerName + (official ? ' · Official' : ''), { sticky: true })
+        .addTo(patrolMap._gearLayer);
+    });
+  }
+
   // ------------------------------------------------------------- identify
 
   function bindIdentify() {
@@ -765,7 +835,8 @@ const Patrol = (function() {
         '  <span class="id-row__code">' + UIModule.escapeHtml(g.code) + '</span>',
         '  <span class="id-row__owner">' + UIModule.escapeHtml(g.ownerName) + '</span>',
         '  <span class="id-row__meta">' + UIModule.escapeHtml(g.label) +
-          (metres ? ' · ' + metres + ' m' : '') + '</span>',
+          (metres ? ' · ' + metres + ' m' : '') +
+          (g.official ? ' · Official' : '') + '</span>',
         '</button>'
       ].join('');
     }).join('');
@@ -854,6 +925,12 @@ const Patrol = (function() {
 
 document.addEventListener('DOMContentLoaded', () => Patrol.init());
 window.Patrol = Patrol;
+
+
+
+
+
+
 
 
 
