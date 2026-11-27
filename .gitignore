@@ -45,3 +45,6 @@ www-site/
 
 # Project data copied from the live site, never commit
 *.local.sql
+
+# Local notes (handoff, test accounts), never commit
+*.local.md
