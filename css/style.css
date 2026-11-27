@@ -1023,9 +1023,15 @@
     bottom: 0;
     z-index: var(--z-tab);
     display: grid;
-    grid-template-columns: repeat(3, 1fr);
+    /* One column per tab, however many there are. The old fixed
+       `repeat(3, 1fr)` wrapped a fourth tab onto a second row — which is
+       exactly the "keep them on one line" complaint. */
+    grid-auto-flow: column;
+    grid-auto-columns: 1fr;
     height: calc(var(--tab-h) + env(safe-area-inset-bottom, 0px));
     padding-bottom: env(safe-area-inset-bottom, 0px);
+    padding-left: env(safe-area-inset-left, 0px);
+    padding-right: env(safe-area-inset-right, 0px);
     background: color-mix(in oklab, var(--surface) 92%, transparent);
     backdrop-filter: blur(18px) saturate(170%);
     border-top: 1px solid var(--border);
@@ -1039,15 +1045,29 @@
     align-items: center;
     justify-content: center;
     gap: 3px;
+    min-width: 0;
+    padding: 0 2px;
     font-size: 10.5px;
     font-weight: 650;
     letter-spacing: 0.02em;
     color: var(--muted);
     transition: color var(--t-fast);
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  /* A label that wraps to two lines makes the whole bar jump height and reads
+     badly at 10 px. One line, always, shrinking rather than wrapping. */
+  .tab > span,
+  .nav-item > span {
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    max-width: 100%;
+    line-height: 1.1;
   }
 
   .tab svg,
-  .nav-item svg { width: 21px; height: 21px; }
+  .nav-item svg { width: 21px; height: 21px; flex: none; }
   .tab:hover,
   .nav-item:hover { color: var(--text); }
 
