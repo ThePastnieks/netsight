@@ -1,0 +1,9 @@
+{
+  "appId": "lv.netsight.app",
+  "appName": "NetSight",
+  "webDir": "www",
+  "backgroundColor": "#FFFFFF",
+  "android": {
+    "allowMixedContent": false
+  }
+}

@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#FFFFFF">
+  <title>NetSight</title>
+  <link rel="icon" href="assets/netsight-logo.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="css/boat.css">
+
+  <script src="js/config.js"></script>
+</head>
+<body>
+  <!--
+    Boat mode: the phone app for people on the water. One decision per screen,
+    buttons at least 72 px tall, undo instead of "are you sure?". Admin stays on
+    the website. Screens are shown and hidden by js/boat.js.
+  -->
+
+  <header class="bar" id="bar">
+    <button type="button" class="bar__back" id="btn-back" aria-label="Back">‹</button>
+    <h1 class="bar__title" id="bar-title">NetSight</h1>
+  </header>
+
+  <main class="screens">
+
+    <!-- ===================================================== home -->
+    <section class="screen" id="screen-home" data-title="NetSight">
+      <div class="status" id="status-line" role="status">
+        <span class="status__dot" id="gps-dot"></span>
+        <span id="status-text">Looking for GPS…</span>
+      </div>
+      <p class="notice" id="admin-note" hidden>Administration is on the website. This app is for the water.</p>
+
+      <div class="stack">
+        <button type="button" class="btn btn--hero btn--primary" data-go="report-type" data-role-show="user patrol admin">
+          <span class="btn__icon">＋</span>Report gear
+        </button>
+
+        <button type="button" class="btn btn--big" data-go="nets" data-role-show="user">
+          <span class="btn__icon">🕸️</span>My nets
+        </button>
+
+        <button type="button" class="btn btn--big btn--primary" data-go="cases" data-role-show="patrol admin">
+          <span class="btn__icon">📋</span>Cases <span class="badge" id="case-count" hidden>0</span>
+        </button>
+
+        <button type="button" class="btn btn--big" data-go="identify" data-role-show="patrol admin">
+          <span class="btn__icon">🔍</span>Identify
+        </button>
+      </div>
+
+      <div class="foot">
+        <span class="foot__who"><span data-user-name>—</span> · <span data-role-label></span></span>
+        <button type="button" class="btn btn--quiet" id="btn-signout">Sign out</button>
+      </div>
+    </section>
+
+    <!-- ===================================================== report: type -->
+    <section class="screen" id="screen-report-type" data-title="What did you see?">
+      <div class="grid">
+        <button type="button" class="tile" data-class="buoy"><span class="tile__icon">🛟</span>Buoy</button>
+        <button type="button" class="tile" data-class="float"><span class="tile__icon">🟠</span>Float</button>
+        <button type="button" class="tile" data-class="net"><span class="tile__icon">🕸️</span>Net</button>
+        <button type="button" class="tile" data-class="trap"><span class="tile__icon">🧺</span>Trap</button>
+      </div>
+    </section>
+
+    <!-- ===================================================== report: place -->
+    <section class="screen" id="screen-report-place" data-title="Where is it?">
+      <div class="stack" id="place-body"></div>
+    </section>
+
+    <!-- ===================================================== report: photo -->
+    <section class="screen" id="screen-report-photo" data-title="Photo">
+      <div class="stack">
+        <div class="preview" id="photo-preview" hidden><img id="photo-img" alt="Your photo"></div>
+        <button type="button" class="btn btn--hero" id="btn-photo"><span class="btn__icon">📷</span><span id="btn-photo-text">Take photo</span></button>
+        <button type="button" class="btn btn--hero btn--go" id="btn-send"><span class="btn__icon">➤</span>Send</button>
+        <button type="button" class="btn btn--quiet" id="btn-send-nophoto">Send without a photo</button>
+      </div>
+    </section>
+
+    <!-- ===================================================== report: sending -->
+    <section class="screen" id="screen-report-send" data-title="Sending">
+      <div class="center">
+        <div class="bignum" id="send-count">5</div>
+        <p class="lead" id="send-text">Sending…</p>
+        <button type="button" class="btn btn--hero btn--warn" id="btn-send-undo">Undo</button>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-report-done" data-title="Sent">
+      <div class="center">
+        <div class="bignum bignum--ok">✓</div>
+        <p class="lead" id="done-text">Reported. Thank you.</p>
+        <button type="button" class="btn btn--hero btn--primary" id="btn-done">Done</button>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-report-failed" data-title="Not sent">
+      <div class="center">
+        <div class="bignum bignum--bad">!</div>
+        <p class="lead" id="failed-text">Could not send.</p>
+        <p class="sub">Your report is still here. Nothing is lost.</p>
+        <button type="button" class="btn btn--hero btn--go" id="btn-retry"><span class="btn__icon">↻</span>Retry</button>
+        <button type="button" class="btn btn--quiet" id="btn-failed-home">Discard this report</button>
+      </div>
+    </section>
+
+    <!-- ===================================================== my nets -->
+    <section class="screen" id="screen-nets" data-title="My nets">
+      <div class="stack">
+        <button type="button" class="btn btn--hero btn--primary" id="btn-net-new"><span class="btn__icon">＋</span>Register a net</button>
+        <div class="list" id="nets-list"></div>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-net-new" data-title="Register a net">
+      <div class="stack" id="net-new-body"></div>
+    </section>
+
+    <section class="screen" id="screen-net-qr" data-title="Net code">
+      <div class="center">
+        <div class="qr" id="qr-box"></div>
+        <p class="bignum bignum--code" id="qr-code">NS-000000</p>
+        <p class="sub">Write this on the buoy, or print the code and fix it there.</p>
+      </div>
+    </section>
+
+    <!-- ===================================================== patrol: cases -->
+    <section class="screen" id="screen-cases" data-title="Cases">
+      <div class="stack">
+        <div class="list" id="cases-list"></div>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-case" data-title="Case">
+      <div class="stack" id="case-body"></div>
+    </section>
+
+    <section class="screen" id="screen-case-accept" data-title="How urgent?">
+      <div class="stack" id="accept-body"></div>
+    </section>
+
+    <section class="screen" id="screen-case-decline" data-title="Why close it?">
+      <div class="stack" id="decline-body"></div>
+    </section>
+
+    <!-- ===================================================== patrol: identify -->
+    <section class="screen" id="screen-identify" data-title="Identify">
+      <div class="stack">
+        <button type="button" class="btn btn--hero btn--primary" id="btn-id-scan"><span class="btn__icon">▦</span>Scan QR code</button>
+        <button type="button" class="btn btn--hero" id="btn-id-here"><span class="btn__icon">◎</span>What is here?</button>
+        <div class="codebox">
+          <input class="input" id="id-code" type="text" inputmode="text" autocapitalize="characters"
+                 autocomplete="off" autocorrect="off" spellcheck="false" placeholder="NS-ABC123" aria-label="Gear code">
+          <button type="button" class="btn btn--big" id="btn-id-code">Check code</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="screen" id="screen-identify-result" data-title="Result">
+      <div class="stack" id="identify-body"></div>
+    </section>
+
+  </main>
+
+  <!-- Undo bar: appears after an action, runs it when the time is up. -->
+  <div class="undo" id="undo" hidden role="status">
+    <span class="undo__text" id="undo-text"></span>
+    <button type="button" class="undo__btn" id="undo-btn">Undo</button>
+    <span class="undo__time" id="undo-bar"></span>
+  </div>
+
+  <div class="toast" id="toast" hidden role="alert"></div>
+
+  <script src="js/status.js"></script>
+  <script src="js/devices.js"></script>
+  <script src="js/gear.js"></script>
+  <script src="js/vendor/qrcode.js"></script>
+  <script src="js/qr.js"></script>
+  <script src="js/cases.js"></script>
+  <script src="js/identify.js"></script>
+  <script src="js/shore.js"></script>
+  <script src="js/location.js"></script>
+  <script src="js/registry.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/vendor/supabase.js"></script>
+  <script src="js/native.bundle.js"></script>
+  <script src="js/auth.js"></script>
+  <script src="js/boat.js"></script>
+</body>
+</html>

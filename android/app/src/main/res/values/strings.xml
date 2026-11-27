@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">NetSight</string>
+    <string name="title_activity_main">NetSight</string>
+    <string name="package_name">lv.netsight.app</string>
+    <string name="custom_url_scheme">lv.netsight.app</string>
+</resources>
