@@ -42,3 +42,6 @@ ios/App/xcuserdata/
 # Local test credentials, never commit
 .test-accounts.local.md
 www-site/
+
+# Project data copied from the live site, never commit
+*.local.sql

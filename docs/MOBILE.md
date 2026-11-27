@@ -31,6 +31,7 @@ The **Map** button (home screen, every role) opens an interactive OpenStreetMap 
 - **You** are a dot with an accuracy circle. It is green inside the permitted water, red outside ("Not on the drawn water"), blue when no shoreline has been drawn. **Centre on me** brings you back; the map never moves by itself after the first GPS fix.
 - **The red line** is the 50 m limit, drawn from the shoreline an administrator drew in the website (Admin → Shore). It comes from that data, not from the tiles, so it looks the same with any tile source.
 - **Reports** are pins coloured by status; nets show as lines. Registered nets: yours in thick blue, others dashed green. Open reports stay on the map day and night; only the "still there?" questions pause at night. Resolved or declined reports are not shown.
+- **Back on the map.** A swipe that starts at the very edge of the screen is Android's *Back* gesture, and is easy to trigger by accident while panning. On the map, Back first closes an open pin sheet, and otherwise needs a **second press within 2.5 s** ("Swipe back again to leave the map"). The big ‹ button in the header leaves at once. On a desktop browser, **Escape** stands in for Back.
 - **Tiles are OpenStreetMap, for testing and presentations only.** Its [usage policy](https://operations.osmfoundation.org/policies/tiles/) forbids heavy and commercial use and may block app traffic. To switch (for example to MapTiler, free key) build with:
   ```bash
   NETSIGHT_TILE_URL='https://api.maptiler.com/maps/streets-v2/256/{z}/{x}/{y}.png?key=YOUR_KEY' \
@@ -40,7 +41,7 @@ The **Map** button (home screen, every role) opens an interactive OpenStreetMap 
 
 ### Demo data for a test project
 
-`supabase/demo/demo_data.sql` fills a **test** project (migrations applied, the four test accounts present) with: a real lake outline (Ķīšezers, Riga; from OpenStreetMap, © OpenStreetMap contributors, ODbL, simplified to about 25 m) so the red 50 m line appears; ten sample reports (undecided, accepted, a registered one, a resolved one); two registered nets; a patrol question to `tboat1`; and two "gone" votes that close one buoy through the real database rule. Run it in the SQL editor. `supabase/demo/demo_cleanup.sql` removes all of it. Everything is marked `demo`. The samples are around 57.02 N, 24.17 E: if you are testing elsewhere, pan the map there, or the data can be regenerated near you.
+`supabase/demo/demo_data.sql` fills a **test** project (migrations applied, the four test accounts present) with: ten sample reports (undecided, accepted, a registered one, a resolved one); two registered nets; a patrol question to `tboat1`; and two "gone" votes that close one buoy through the real database rule. Run it in the SQL editor. `supabase/demo/demo_cleanup.sql` removes all of it. Everything is marked `demo`. The samples are placed in the Daugava in Riga (about 56.95–56.99 N, 24.09 E), inside the permitted water of the hand-drawn shoreline copied from the live website; every position was checked with the app's own geofence and line rules. If you use another shoreline, regenerate the positions. No shoreline is included in the repo: it is project data, so keep a copy in `supabase/demo/*.local.sql` (git-ignored) or draw one with `npm run site`.
 
 ## Run it on your computer (nothing to install but Node)
 

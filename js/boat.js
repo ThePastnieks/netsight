@@ -31,6 +31,7 @@
   let session = null;
   let stack = ['home'];
   let currentScreen = 'home';
+  let lastMapBack = 0;           // when Back was last pressed on the map (see systemBack)
   let gps = null;            // { lat, lon, accuracy, at } or { error }
   let gpsTimer = null;
   let draft = null;          // the report being made
@@ -47,6 +48,7 @@
 
   function show(id) {
     if (currentScreen === 'map' && id !== 'map') BoatMap.leave();
+    if (id === 'map' && currentScreen !== 'map') lastMapBack = 0;   // a new visit starts with a clean slate
     currentScreen = id;
     document.querySelectorAll('.screen').forEach(s => s.classList.toggle('is-active', s.id === 'screen-' + id));
     const el = $('screen-' + id);
@@ -69,6 +71,24 @@
   function goHome() {
     stack = ['home'];
     show('home');
+  }
+
+  // Android's Back button, and its swipe-from-the-edge gesture. On the map a swipe that
+  // starts at the screen edge is easy to do by accident while panning, and used to throw
+  // you out to the start screen. So there: Back first closes an open pin sheet, and
+  // otherwise needs a second press within 2.5 s. The big ‹ button in the header still
+  // leaves at once. Returns true when the press was used (false lets the app minimise).
+  function systemBack() {
+    if (currentScreen === 'map') {
+      if (!$('pin-sheet').hidden) { closePinSheet(); return true; }
+      const now = Date.now();
+      if (now - lastMapBack > 2500) {
+        lastMapBack = now;
+        toast('Swipe back again to leave the map', true);
+        return true;
+      }
+    }
+    return back();
   }
 
   // Returns true if it moved back; false when already home (Android back uses this).
@@ -1131,7 +1151,7 @@
     $('undo-btn').onclick = undoPending;
     $('btn-signout').onclick = () => Auth.logout();
 
-    Native.onBack(() => back());
+    Native.onBack(systemBack);
   }
 
   async function init() {

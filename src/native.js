@@ -154,7 +154,11 @@ async function openMap(lat, lon, label) {
 // ------------------------------------------------------------ back button
 // Android's back button walks back through screens before leaving the app.
 function onBack(handler) {
-  if (!isNative) return;
+  if (!isNative) {
+    // Desktop testing: Escape stands in for Android's Back button / swipe.
+    document.addEventListener('keydown', e => { if (e.key === 'Escape') handler(); });
+    return;
+  }
   App.addListener('backButton', () => {
     if (!handler()) App.minimizeApp();
   });
