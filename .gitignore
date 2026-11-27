@@ -38,3 +38,6 @@ ios/App/Pods/
 ios/App/App/public/
 ios/App/App/capacitor.config.json
 ios/App/xcuserdata/
+
+# Local test credentials, never commit
+.test-accounts.local.md

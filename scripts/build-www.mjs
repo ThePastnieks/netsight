@@ -6,6 +6,10 @@
 // native plugins into js/native.bundle.js, and points every role at boat.html.
 //
 //   npm run build         normal build, uses the Supabase project in js/config.js
+//   NETSIGHT_SUPABASE_URL=... NETSIGHT_SUPABASE_KEY=... npm run build
+//                         point the build at another Supabase project (a test copy)
+//                         without editing js/config.js. The key is the PUBLIC
+//                         publishable / anon key, never the service key.
 //   npm run build:local   same, but with Supabase blanked: the app runs in local
 //                         mode, so you can click through it without touching real data.
 
@@ -76,6 +80,29 @@ if (local) {
   writeFileSync(cfgPath, cfg);
 }
 
+// Point the build at another Supabase project, e.g. a test copy.
+const overrideUrl = process.env.NETSIGHT_SUPABASE_URL;
+const overrideKey = process.env.NETSIGHT_SUPABASE_KEY;
+if (overrideUrl || overrideKey) {
+  if (!overrideUrl || !overrideKey) throw new Error('Set both NETSIGHT_SUPABASE_URL and NETSIGHT_SUPABASE_KEY');
+  if (/service_role/i.test(overrideKey) || /"role":"service/.test(Buffer.from(overrideKey.split('.')[1] || '', 'base64').toString())) {
+    throw new Error('That looks like a service key. Only the public publishable/anon key may go in the app.');
+  }
+  const cfgPath = join(www, 'js/config.js');
+  writeFileSync(cfgPath, readFileSync(cfgPath, 'utf8')
+    .replace(/SUPABASE_URL:\s*'[^']*'/, "SUPABASE_URL: '" + overrideUrl + "'")
+    .replace(/SUPABASE_ANON_KEY:\s*'[^']*'/, "SUPABASE_ANON_KEY: '" + overrideKey + "'"));
+}
+
+// The email domain usernames are expanded to. Supabase checks that the domain can
+// receive mail, so a test project may need a different one. It must never change
+// after the first signup in a project.
+if (process.env.NETSIGHT_AUTH_DOMAIN) {
+  const cfgPath = join(www, 'js/config.js');
+  writeFileSync(cfgPath, readFileSync(cfgPath, 'utf8')
+    .replace(/AUTH_EMAIL_DOMAIN:\s*'[^']*'/, "AUTH_EMAIL_DOMAIN: '" + process.env.NETSIGHT_AUTH_DOMAIN + "'"));
+}
+
 // Fail loudly if a CDN reference survived: the app would break offline-ish.
 for (const page of ['login.html', 'boat.html']) {
   const p = join(www, page);
@@ -84,4 +111,4 @@ for (const page of ['login.html', 'boat.html']) {
   }
 }
 
-console.log('www/ built' + (local ? ' (LOCAL mode: no Supabase)' : ' (cloud mode)'));
+console.log('www/ built' + (local ? ' (LOCAL mode: no Supabase)' : (overrideUrl ? ' (cloud mode, project override: ' + overrideUrl + ')' : ' (cloud mode)')));

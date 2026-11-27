@@ -61,6 +61,20 @@ Not verified yet. The QR plugin (`@capacitor-mlkit/barcode-scanning`) is not Swi
 
 ## Before real users
 
-- Run `supabase/migrations/007_hardening.sql`, then `008_gear_checks.sql`, in the Supabase SQL editor (in that order). Try them on a copy of the project first.
+- Run the migrations in the Supabase SQL editor, in this order: `007_hardening.sql`, `008_gear_checks.sql`, `009_function_privileges.sql`. Try them on a copy of the project first.
+- A fresh project needs `003_full_schema.sql`, `006_case_decisions.sql`, then `007`, `008`, `009` (`001`, `002`, `004` and `005` are not needed).
+- Supabase rejects some email domains (it checks they can receive mail). `netsight.lv` was refused by a new project; the test project used `example.com`. A project's domain must never change after its first signup.
+- Authentication → Sign In / Providers → Email: **Enable Email provider = on**, **Confirm email = off**. Otherwise sign-up fails (usernames map to addresses that cannot confirm) or hits the mailer's rate limit.
+
+### Building against a test project
+
+```bash
+NETSIGHT_AUTH_DOMAIN=example.com \
+NETSIGHT_SUPABASE_URL=https://<ref>.supabase.co \
+NETSIGHT_SUPABASE_KEY=<publishable key> \
+npm run build
+```
+
+The build refuses a service key. Only the public publishable/anon key may go in the app.
 - The map is not used in boat mode yet. When it is, do not use `tile.openstreetmap.org` from an app: its [tile policy](https://operations.osmfoundation.org/policies/tiles/) wants an identifying User-Agent and restricts app use. Use a tile provider with a key.
 - The buoy telemetry endpoint is unauthenticated. Fix it once the hardware and its protocol are known.
