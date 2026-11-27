@@ -1,4 +1,4 @@
-﻿// NetSight Map Module
+// NetSight Map Module
 // Leaflet map, sighting markers, filtering and the location picker
 
 const MapModule = (function() {
@@ -73,6 +73,25 @@ const MapModule = (function() {
 
       // Keep tiles crisp after screen changes
       setTimeout(() => map && map.invalidateSize(), 200);
+
+      // A map built while its container is 0×0 renders nothing at all — no
+      // tiles, no zoom control, no attribution — and never recovers on its own,
+      // so it simply looks broken. That happens whenever the map is created
+      // before its pane has been laid out, or the tab is tapped within a frame
+      // of the page appearing. Watch the element and re-measure as soon as its
+      // real size differs from what Leaflet has cached. This also handles
+      // rotation and the on-screen keyboard changing the viewport.
+      if (typeof ResizeObserver !== 'undefined') {
+        const ro = new ResizeObserver(() => {
+          if (!map) return;
+          const cached = map.getSize();
+          if (el.clientWidth !== cached.x || el.clientHeight !== cached.y) {
+            map.invalidateSize();
+          }
+        });
+        ro.observe(el);
+        map._sizeObserver = ro;
+      }
 
       return map;
     } catch (err) {

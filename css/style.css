@@ -3645,3 +3645,41 @@
   /* Three tabs now — keep them equal and still thumb-sized. */
   .patrol-tabs { grid-template-columns: repeat(3, 1fr); }
 }
+
+/* ===================== MAP / SHORE MESSAGES =========================== */
+@layer components {
+  /* A blank map with no explanation reads as "broken". This says what is
+     missing instead. */
+  .map-note {
+    padding: var(--s3);
+    border-radius: var(--r-md);
+    border: 1px solid color-mix(in oklab, var(--warn) 50%, transparent);
+    background: var(--warn-soft);
+    color: var(--text);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .map-note b { color: var(--warn); }
+
+  .map-error {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--s2);
+    height: 100%;
+    padding: var(--s4);
+    text-align: center;
+    color: var(--muted);
+    font-size: 13px;
+    line-height: 1.5;
+  }
+
+  .map-error b { color: var(--danger); font-size: 14.5px; }
+
+  .card--warn {
+    border-color: color-mix(in oklab, var(--warn) 45%, transparent);
+    background: color-mix(in oklab, var(--warn) 7%, var(--surface));
+  }
+}

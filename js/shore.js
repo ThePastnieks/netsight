@@ -127,6 +127,44 @@ const Shore = (function() {
   }
 
   // Forces a re-read, e.g. after another admin changed something.
+// Shapes that live in this browser only. Before cloud mode existed every
+  // shoreline was stored here; switching the app to a database left them behind,
+  // invisible, and the map looked empty for no visible reason. This lets an
+  // administrator bring them across.
+  function localBackup() {
+    const list = readLocal();
+    return Array.isArray(list) ? list : [];
+  }
+
+  // Copies the browser's shapes into the database. Returns how many were added.
+  // The local copy is left untouched: deleting somebody's only record of a
+  // shoreline as a side effect of an import would be unforgivable.
+  async function importLocal() {
+    if (typeof Auth === 'undefined' || !Auth.isCloud()) {
+      return { ok: false, added: 0, message: 'Only needed in cloud mode' };
+    }
+
+    const pending = localBackup();
+    if (!pending.length) return { ok: true, added: 0, message: 'Nothing to copy' };
+
+    let added = 0;
+    for (const shape of pending) {
+      const result = await add({
+        kind: shape.kind,
+        name: shape.name,
+        coords: shape.coords,
+        lat: shape.lat,
+        lon: shape.lon,
+        radius: shape.radius,
+        rule: shape.rule,
+        distance: shape.distance
+      });
+      if (result.ok) added++;
+    }
+
+    await reload();
+    return { ok: true, added, message: added + ' copied to the database' };
+  }
   function reload() {
     loaded = null;
     shapes = null;
@@ -712,6 +750,8 @@ const Shore = (function() {
     update,
     remove,
     clear,
+    localBackup,
+    importLocal,
     count,
     permittedOf,
     RULES,
@@ -736,6 +776,7 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.Shore = Shore;
 }
+
 
 
 

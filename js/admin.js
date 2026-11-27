@@ -56,6 +56,7 @@ const Admin = (function() {
             // shape since this tab was last opened.
             renderShoreList();
             renderShoreShapes();
+            updateShoreImport();
           }, 60);
         }
       });
@@ -862,10 +863,54 @@ function ruleLabel(rule, distance) {
     try { MapModule.toggleZones(true); } catch (err) { /* admin has no zone layer */ }
   }
 
+// Shows the browser-only shapes card when there are any and the database has
+  // none. Only in cloud mode: in local mode the browser *is* the store.
+  function updateShoreImport() {
+    const card = document.getElementById('shore-import-card');
+    const count = document.getElementById('shore-import-count');
+    if (!card) return;
+
+    const inCloud = typeof Auth !== 'undefined' && Auth.isCloud();
+    const backup = inCloud && typeof Shore.localBackup === 'function' ? Shore.localBackup() : [];
+    const dbHas = Shore.count();
+
+    if (inCloud && backup.length && !dbHas) {
+      card.hidden = false;
+      if (count) count.textContent = backup.length + (backup.length === 1 ? ' shape' : ' shapes');
+    } else {
+      card.hidden = true;
+    }
+  }
+
+  async function importLocalShapes() {
+    const btn = document.getElementById('btn-shore-import');
+    if (btn) { btn.disabled = true; btn.textContent = 'Copying…'; }
+
+    try {
+      const result = await Shore.importLocal();
+
+      if (!result.ok) {
+        UIModule.showToast(result.message, 'error');
+        return;
+      }
+
+      UIModule.showToast(result.message, 'success');
+      renderShoreList();
+      renderShoreShapes();
+      updateShoreImport();
+    } catch (err) {
+      console.error('Import failed:', err);
+      UIModule.showToast('Import failed: ' + err.message, 'error');
+    } finally {
+      if (btn) { btn.disabled = false; btn.textContent = 'Copy them to the database'; }
+    }
+  }
   function bindShore() {
     document.getElementById('shore-rule')?.addEventListener('change', syncRuleUi);
     document.getElementById('shore-distance')?.addEventListener('input', syncRuleUi);
+    document.getElementById('btn-shore-import')?.addEventListener('click', importLocalShapes);
     syncRuleUi();
+    updateShoreImport();
 
     document.querySelectorAll('[data-tool]').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -1279,6 +1324,8 @@ function ruleLabel(rule, distance) {
 
 document.addEventListener('DOMContentLoaded', () => Admin.init());
 window.Admin = Admin;
+
+
 
 
 

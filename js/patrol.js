@@ -660,19 +660,44 @@ const Patrol = (function() {
   // container, and there is no reason to pay for a map nobody is looking at.
   function ensureMap() {
     const host = document.getElementById('patrol-map');
-    if (!host || patrolMap) {
-      if (patrolMap) setTimeout(() => patrolMap.invalidateSize(), 60);
+    if (!host) return null;
+
+    if (patrolMap) {
+      patrolMap.invalidateSize();
       return patrolMap;
     }
 
-    patrolMap = MapModule.initMap('patrol-map', CONFIG.MAP_CENTER, CONFIG.MAP_ZOOM);
-    if (!patrolMap) return null;
+    // Force layout before Leaflet measures. A pane that was `display: none` a
+    // moment ago can still measure 0×0, and a map built at 0×0 renders nothing
+    // at all — no tiles, no lines, just a blank box. This is the single most
+    // common reason a lazily-built map "does not show up".
+    void host.offsetHeight;
+
+    const built = MapModule.initMap('patrol-map', CONFIG.MAP_CENTER, CONFIG.MAP_ZOOM);
+
+    if (!built) {
+      showMapProblem(host);
+      return null;
+    }
+
+    patrolMap = built;
 
     MapModule.toggleZones(true);
     MapModule.renderDevices(Devices.all());
     MapModule.toggleDeviceLayer(true);
     MapModule.renderSightings(cases);
     MapModule.fitToWater();
+
+    // Second chance: if it still measures zero (a slow reflow, a font settling),
+    // nudge it once more rather than leaving a blank canvas.
+    setTimeout(() => {
+      if (!patrolMap) return;
+      const size = patrolMap.getSize();
+      if (size.x < 10 || size.y < 10) patrolMap.invalidateSize();
+      paintGearOnMap();
+    }, 180);
+
+    updateMapNote();
 
     const open = cases.filter(c => CaseModule.isOpen(c) && !c.verdict).length;
     const set = (id, n) => { const el = document.getElementById(id); if (el) el.textContent = String(n); };
@@ -683,6 +708,23 @@ const Patrol = (function() {
     return patrolMap;
   }
 
+  // "Nothing here" must never look like "it is broken". If Leaflet refuses to
+  // build, say so where the map would have been.
+  function showMapProblem(host) {
+    host.innerHTML =
+      '<div class="map-error">' +
+      '<b>The map could not start.</b>' +
+      '<span>Reload the page. If it keeps failing, the map library did not load.</span>' +
+      '</div>';
+  }
+
+  // Says out loud when there is no permitted water drawn, because an empty map
+  // with no red lines reads as a bug rather than as "nobody has drawn it yet".
+  function updateMapNote() {
+    const note = document.getElementById('map-note');
+    if (!note) return;
+    note.hidden = Shore.count() > 0;
+  }
   // Draw registered nets on the map: a patrol needs to see whose gear is where
   // before deciding that a line on the water is abandoned.
   function paintGearOnMap() {
