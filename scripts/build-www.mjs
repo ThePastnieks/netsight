@@ -68,7 +68,12 @@ const rewrite = html => html
 for (const page of ['login.html', 'boat.html']) {
   const src = join(root, page);
   if (!existsSync(src)) continue;
-  writeFileSync(join(www, page), rewrite(readFileSync(src, 'utf8')));
+  let html = rewrite(readFileSync(src, 'utf8'));
+  // The sign-in page is the website's own page; the app adds the language scripts to its copy.
+  if (page === 'login.html') {
+    html = html.replace('</body>', '  <script src="js/i18n.js"></script>\n  <script src="js/i18n-lv.js"></script>\n</body>');
+  }
+  writeFileSync(join(www, page), html);
 }
 
 // Capacitor requires www/index.html. The app starts at the sign-in page; a signed-in

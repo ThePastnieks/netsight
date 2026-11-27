@@ -24,6 +24,14 @@ Like Waze asking whether the police are still there. While the app is open and a
 
 Settings are in `js/boat-config.js` (`CONFIG.STILL_THERE`). The "2 votes" number is in the SQL.
 
+## Language (Latviešu / English)
+
+A **LV | EN** switch sits at the top right of every screen, and on the sign-in page. The app starts in Latvian when the phone is set to Latvian, otherwise English, and remembers the last choice.
+
+How it works: the app and the website modules it reuses write English. `js/i18n.js` watches the screen and swaps any text it recognises for the Latvian in `js/i18n-lv.js` (exact text, plus patterns for sentences with numbers and names, like "3 h ago" or "NS-123 is registered to anna …"). Nothing in the website is touched. Switching back to English restores the original text. Anything the dictionary does not know stays in English; in the browser console, `I18n.missed()` lists those strings, which makes gaps easy to find. To add or fix a translation, edit `js/i18n-lv.js` only.
+
+The Latvian was written by Claude and **has not been proofread by a native speaker**. Things worth checking: terms (*murds* for trap, *pludiņš* for float, *Jālemj* / *Jāsavāc* for the two case lists), the left/right bank answers, and the grammar of sentences built from names. User-written text (report notes, usernames, net names) is never translated.
+
 ## The map
 
 The **Map** button (home screen, every role) opens an interactive OpenStreetMap map: pan, pinch to zoom, tap a pin for details (staff get **Open case**).

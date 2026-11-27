@@ -22,6 +22,10 @@
   <header class="bar" id="bar">
     <button type="button" class="bar__back" id="btn-back" aria-label="Back">‹</button>
     <h1 class="bar__title" id="bar-title">NetSight</h1>
+    <div class="langs" data-i18n="off">
+      <button type="button" data-lang-btn="lv" aria-label="Latviešu">LV</button>
+      <button type="button" data-lang-btn="en" aria-label="English">EN</button>
+    </div>
   </header>
 
   <main class="screens">
@@ -239,6 +243,8 @@
 
   <div class="toast" id="toast" hidden role="alert"></div>
 
+  <script src="js/i18n.js"></script>
+  <script src="js/i18n-lv.js"></script>
   <script src="js/vendor/leaflet.js"></script>
   <script src="js/status.js"></script>
   <script src="js/devices.js"></script>

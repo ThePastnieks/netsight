@@ -657,7 +657,7 @@
         '<span>' + esc(ageOf(c.created_at)) + (distanceText(c) ? ' · ' + esc(distanceText(c)) : '') + '</span></div>' +
       '<div class="kv"><b>' + (gear ? esc(gear.ownerName) + ' · ' + esc(gear.code) : (c.registry_match ? 'Registered' : 'Nobody registered it')) + '</b>' +
         (c.reporter_name ? '<span>Reported by ' + esc(c.reporter_name) + '</span>' : '') + '</div>' +
-      (gone ? '<div class="pos pos--bad">' + esc(c.gone_votes) + ' boater' + (c.gone_votes > 1 ? 's' : '') + ' say it is gone. Check before you go out.</div>' : '') +
+      (gone ? '<div class="pos pos--bad">' + (c.gone_votes > 1 ? esc(c.gone_votes) + ' boaters say' : '1 boater says') + ' it is gone. Check before you go out.</div>' : '') +
       (c.last_confirmed_at ? '<div class="kv"><span>Boaters saw it still there ' + esc(ageOf(c.last_confirmed_at)) + '</span></div>' : '') +
       (c.note ? '<div class="kv"><span>' + esc(c.note) + '</span></div>' : '') +
       (accepted
@@ -807,7 +807,7 @@
   // undo window as everything else.
 
   const STAFF_TILES = ['Which side of the water is it?', 'Is it still there?', 'How big is it?', 'Thank you.'];
-  const REPORTER_TILES = ['It is still there.', 'It is gone now.', 'Left bank.', 'Right bank.'];
+  const REPORTER_TILES = ['It is still there.', 'It is gone now.', 'Left bank.', 'Right bank.', 'I do not know.'];
 
   function openThread(c) {
     thread = { c };
@@ -992,7 +992,7 @@
 
   function renderDiag() {
     const t = StillThere.sunTimes(new Date(), gps && gps.lat ? gps.lat : CONFIG.MAP_CENTER[0], gps && gps.lon ? gps.lon : CONFIG.MAP_CENTER[1]);
-    const clock = d => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    const clock = d => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
     $('diag-body').innerHTML =
       '<p class="sub">' + (Native.isNative ? 'Phone app' : 'Browser: the camera opens a file picker and QR scanning is not available here') +
         ' · build ' + esc(CONFIG.BUILD) + '</p>' +

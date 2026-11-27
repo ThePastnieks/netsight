@@ -271,7 +271,7 @@ const StillThere = (function () {
   }
 
   function hhmm(d) {
-    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    return d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit', hour12: false });
   }
 
   // The clock can be replaced for testing (browser only, see boat.js).
