@@ -14,6 +14,8 @@
   const UNDO_MS = 6000;      // how long an action can be taken back
   const SEND_DELAY_MS = 5000; // report is sent after this unless undone
   const GPS_REFRESH_MS = 4000;
+  // Screens where a gear-check question may appear. Never mid-report or mid-decision.
+  const CALM = ['home', 'nets', 'cases', 'identify', 'my-reports'];
 
   const CLASSES = {
     buoy:  { label: 'Buoy',  line: false },
@@ -33,7 +35,9 @@
   let draft = null;          // the report being made
   let sendTimer = null;
   let netDraft = null;
-  let cases = [];
+  let allCases = [];
+  let casesTab = 'decide';
+  let thread = null;
   const decidingIds = new Set();   // decided but still inside the undo window: hidden from the list
   let currentCase = null;
 
@@ -82,6 +86,8 @@
     if (id === 'nets') renderNets();
     if (id === 'net-new') { startGpsLoop(); renderNetNew(); }
     if (id === 'cases') { refreshGps(); loadCases(); }
+    if (id === 'my-reports') renderMyReports();
+    if (id === 'diag') renderDiag();
     if (id === 'identify') $('id-code').value = '';
   }
 
@@ -203,6 +209,7 @@
     // Staff see Cases and Identify; the boater's "My nets" is for owners only.
     $('admin-note').hidden = role !== 'admin';
     if (role === 'patrol' || role === 'admin') updateCaseCount();
+    if (role === 'user') updateReplyCount();
   }
 
   // Same rule as the website's To-do list: open, and nobody has decided yet.
@@ -358,7 +365,11 @@
       try {
         // The id is made once per report, so a retry after a lost reply cannot
         // create a second case.
-        await StoreModule.createSightingUnified(Object.assign({ id: d.id }, v.normalized));
+        // In the cloud the database fills these in. In local mode nothing does, and
+        // "My reports" and the age of a report need them.
+        const localFields = Auth.isCloud() ? {} :
+          { created_at: new Date().toISOString(), reported_by: session.id, reporter_name: session.username };
+        await StoreModule.createSightingUnified(Object.assign({ id: d.id }, v.normalized, localFields));
       } catch (err) {
         if (!(err && (err.code === '23505' || /duplicate key/i.test(err.message || '')))) throw err;
       }
@@ -505,12 +516,14 @@
 
   // ================================================================= cases
 
+  // Two lists, like the website: "To decide" (open, nobody has decided) and
+  // "To collect" (accepted by patrol, still out there).
   async function loadCases() {
     const host = $('cases-list');
     host.innerHTML = '<p class="sub">Loading…</p>';
     try {
       await GearModule.load();
-      cases = CaseModule.sortForPatrol((await StoreModule.getSightingsUnified(500)).filter(needsDecision));
+      allCases = (await StoreModule.getSightingsUnified(500)).filter(c => CaseModule.isOpen(c));
     } catch (err) {
       host.innerHTML = '<p class="lead">Could not load cases.</p><p class="sub">' + esc(friendly(err)) + '</p>' +
         '<button type="button" class="btn btn--hero btn--go" id="btn-cases-retry">↻ Retry</button>';
@@ -519,6 +532,10 @@
     }
     renderCases();
   }
+
+  const visibleCase = c => !decidingIds.has(c.id);
+  const toDecide = () => CaseModule.sortForPatrol(allCases.filter(c => !c.verdict && visibleCase(c)));
+  const toCollect = () => CaseModule.sortForPatrol(allCases.filter(c => c.verdict === 'accepted' && visibleCase(c)));
 
   function ageOf(iso) {
     if (!iso || Number.isNaN(new Date(iso).getTime())) return 'time unknown';
@@ -536,30 +553,45 @@
 
   function renderCases() {
     const host = $('cases-list');
-    const visible = cases.filter(c => !decidingIds.has(c.id));
-    if (!visible.length) {
-      host.innerHTML = '<p class="lead">All clear.</p><p class="sub">No open cases.</p>';
+    const decide = toDecide();
+    const collect = toCollect();
+    $('n-decide').textContent = decide.length;
+    $('n-collect').textContent = collect.length;
+    $('tab-decide').classList.toggle('is-on', casesTab === 'decide');
+    $('tab-collect').classList.toggle('is-on', casesTab === 'collect');
+
+    const list = casesTab === 'decide' ? decide : collect;
+    if (!list.length) {
+      host.innerHTML = casesTab === 'decide'
+        ? '<p class="lead">All clear.</p><p class="sub">Nothing is waiting for a decision.</p>'
+        : '<p class="lead">Nothing to collect.</p><p class="sub">Accepted cases appear here until they are collected or gone.</p>';
       return;
     }
-    host.innerHTML = visible.map(c => {
+
+    host.innerHTML = list.map(c => {
       const sev = CaseModule.severityInfo(c.severity);
+      const gone = Number(c.gone_votes) > 0;
       return '<button type="button" class="card" data-case="' + esc(c.id) + '">' +
         '<div class="card__top"><span class="grow">' + esc((CLASSES[c.user_class] || {}).label || 'Gear') + '</span>' +
+          (gone ? '<span class="chip chip--warn">' + esc(c.gone_votes) + ' say gone</span>' : '') +
           (sev ? '<span class="chip chip--' + esc(sev.tone) + '">' + esc(sev.label) + '</span>' : '') + '</div>' +
         '<div class="card__sub">' + esc(ageOf(c.created_at)) + (distanceText(c) ? ' · ' + esc(distanceText(c)) : '') + '</div>' +
-        '<div class="card__sub">' + (c.registry_match ? 'Registered' : 'Nobody registered it') + '</div>' +
+        '<div class="card__sub">' + (c.registry_match ? 'Registered' : 'Nobody registered it') +
+          (c.last_confirmed_at ? ' · still there ' + esc(ageOf(c.last_confirmed_at)) : '') + '</div>' +
       '</button>';
     }).join('');
     host.querySelectorAll('[data-case]').forEach(b => b.onclick = () => openCase(b.dataset.case));
   }
 
   function openCase(id) {
-    currentCase = cases.find(c => c.id === id);
+    currentCase = allCases.find(c => c.id === id);
     if (!currentCase) return;
     const c = currentCase;
+    const accepted = c.verdict === 'accepted';
     const gear = c.registry_match && c.registry_id ? GearModule.findByCode(c.registry_id) : null;
     const len = Array.isArray(c.span) && c.span.length === 2
       ? Math.round(Devices.haversine(c.span[0][0], c.span[0][1], c.span[1][0], c.span[1][1])) + ' m long' : '';
+    const gone = Number(c.gone_votes) > 0;
 
     $('case-body').innerHTML =
       (c.photo_url ? '<img class="photo" src="' + esc(c.photo_url) + '" alt="Photo of the report">' : '') +
@@ -567,13 +599,51 @@
         '<span>' + esc(ageOf(c.created_at)) + (distanceText(c) ? ' · ' + esc(distanceText(c)) : '') + '</span></div>' +
       '<div class="kv"><b>' + (gear ? esc(gear.ownerName) + ' · ' + esc(gear.code) : (c.registry_match ? 'Registered' : 'Nobody registered it')) + '</b>' +
         (c.reporter_name ? '<span>Reported by ' + esc(c.reporter_name) + '</span>' : '') + '</div>' +
+      (gone ? '<div class="pos pos--bad">' + esc(c.gone_votes) + ' boater' + (c.gone_votes > 1 ? 's' : '') + ' say it is gone. Check before you go out.</div>' : '') +
+      (c.last_confirmed_at ? '<div class="kv"><span>Boaters saw it still there ' + esc(ageOf(c.last_confirmed_at)) + '</span></div>' : '') +
       (c.note ? '<div class="kv"><span>' + esc(c.note) + '</span></div>' : '') +
-      '<button type="button" class="btn btn--hero btn--go" id="btn-accept">Accept</button>' +
-      '<button type="button" class="btn btn--hero" id="btn-decline">Decline</button>';
+      (accepted
+        ? '<button type="button" class="btn btn--hero btn--go" id="btn-collected"><span class="btn__icon">✓</span>Collected</button>' +
+          '<button type="button" class="btn btn--hero" id="btn-gonenow"><span class="btn__icon">✕</span>Not there</button>'
+        : '<button type="button" class="btn btn--hero btn--go" id="btn-accept">Accept</button>' +
+          '<button type="button" class="btn btn--hero" id="btn-decline">Decline</button>') +
+      (c.reported_by ? '<button type="button" class="btn btn--big" id="btn-ask"><span class="btn__icon">💬</span>Ask the reporter</button>' : '');
 
-    $('btn-accept').onclick = () => go('case-accept');
-    $('btn-decline').onclick = () => go('case-decline');
+    if (accepted) {
+      $('btn-collected').onclick = () => closeOut(c, 'Collected');
+      $('btn-gonenow').onclick = () => closeOut(c, 'Not there');
+    } else {
+      $('btn-accept').onclick = () => go('case-accept');
+      $('btn-decline').onclick = () => go('case-decline');
+    }
+    const ask = $('btn-ask');
+    if (ask) ask.onclick = () => openThread(c);
     go('case');
+  }
+
+  // Closing an accepted case: hidden at once, written for real after the undo time.
+  function closeOut(c, what) {
+    decidingIds.add(c.id);
+    stack = ['home', 'cases'];
+    show('cases');
+    withUndo(what + ': ' + ((CLASSES[c.user_class] || {}).label || 'gear'), async () => {
+      try {
+        await StoreModule.updateSightingUnified(c.id, {
+          status: 'resolved',
+          handled_by: session.username,
+          handled_at: new Date().toISOString(),
+          note: ((c.note ? c.note + ' · ' : '') + what).slice(0, 500)
+        });
+      } catch (err) {
+        toast(friendly(err));
+      } finally {
+        decidingIds.delete(c.id);
+        if (stack[stack.length - 1] === 'cases') loadCases();
+      }
+    }, () => {
+      decidingIds.delete(c.id);
+      if (stack[stack.length - 1] === 'cases') renderCases();
+    });
   }
 
   // Severity and decline reasons are big tiles. Pressing one is the decision;
@@ -613,6 +683,211 @@
     paintTiles('decline-body',
       Object.keys(CaseModule.DECLINE_REASONS).map(id => CaseModule.DECLINE_REASONS[id]),
       id => decide('decline', id, 'Declined: ' + CaseModule.DECLINE_REASONS[id].label));
+  }
+
+  // ================================================================ messages
+  //
+  // The patrol asks the reporter a question; the reporter answers. Both sides use
+  // big tiles with the common sentences, plus a text box. Sending has the same
+  // undo window as everything else.
+
+  const STAFF_TILES = ['Which side of the water is it?', 'Is it still there?', 'How big is it?', 'Thank you.'];
+  const REPORTER_TILES = ['It is still there.', 'It is gone now.', 'Left bank.', 'Right bank.'];
+
+  function openThread(c) {
+    thread = { c };
+    go('thread');
+    renderThread();
+  }
+
+  async function renderThread() {
+    if (!thread) return;
+    const c = thread.c;
+    const host = $('thread-body');
+    host.innerHTML = '<p class="sub">Loading…</p>';
+    const msgs = await CaseModule.messages(c.id);
+    if (!thread || thread.c.id !== c.id) return;
+
+    const staff = session.role === 'patrol' || session.role === 'admin';
+    const tiles = staff ? STAFF_TILES : REPORTER_TILES;
+
+    host.innerHTML =
+      '<div class="kv"><b>' + esc((CLASSES[c.user_class] || {}).label || 'Gear') + ' report</b><span>' + esc(ageOf(c.created_at)) + '</span></div>' +
+      '<div class="bubbles">' + (msgs.length
+        ? msgs.map(m => '<div class="bubble ' + (m.authorName === session.username ? 'bubble--me' : 'bubble--them') + '">' +
+            '<small>' + esc(m.authorName) + (m.authorRole !== 'user' ? ' · patrol' : '') + ' · ' + esc(ageOf(m.createdAt)) + '</small>' + esc(m.text) + '</div>').join('')
+        : '<p class="sub">No messages yet.</p>') + '</div>' +
+      '<div class="grid grid--one">' + tiles.map((t, i) =>
+        '<button type="button" class="tile tile--row" data-msg="' + i + '">' + esc(t) + '</button>').join('') + '</div>' +
+      '<div class="send-row"><input class="input" id="msg-text" type="text" maxlength="300" placeholder="Write a message" aria-label="Message">' +
+        '<button type="button" class="btn btn--big btn--primary" id="msg-send">Send</button></div>';
+
+    host.querySelectorAll('[data-msg]').forEach(b => b.onclick = () => queueMessage(tiles[Number(b.dataset.msg)]));
+    $('msg-send').onclick = () => {
+      const t = $('msg-text').value.trim();
+      if (!t) { toast('Write something first.'); return; }
+      queueMessage(t);
+    };
+  }
+
+  function queueMessage(text) {
+    const c = thread && thread.c;
+    if (!c) return;
+    withUndo('Message sent', async () => {
+      const r = await CaseModule.sendMessage(c.id, text);
+      if (!r.ok) toast(r.message || 'Message not sent');
+      if (stack[stack.length - 1] === 'thread') renderThread();
+    }, () => {});
+  }
+
+  // Reports I made, with the ones the patrol has written to marked.
+  async function myReportsState() {
+    const all = await StoreModule.getSightingsUnified(500);
+    const mine = all.filter(s => s.reported_by && s.reported_by === session.id)
+      .sort((a, b) => new Date(b.created_at || 0) - new Date(a.created_at || 0))
+      .slice(0, 15);
+    return Promise.all(mine.map(async s => {
+      const msgs = await CaseModule.messages(s.id);
+      const last = msgs[msgs.length - 1] || null;
+      return { s, last, waiting: !!(last && last.authorRole !== 'user') };
+    }));
+  }
+
+  async function renderMyReports() {
+    const host = $('myreports-list');
+    host.innerHTML = '<p class="sub">Loading…</p>';
+    let rows;
+    try { rows = await myReportsState(); } catch (err) {
+      host.innerHTML = '<p class="lead">Could not load.</p><p class="sub">' + esc(friendly(err)) + '</p>';
+      return;
+    }
+    if (!rows.length) {
+      host.innerHTML = '<p class="lead">No reports yet.</p><p class="sub">Reports you send appear here, with any question from the patrol.</p>';
+      return;
+    }
+    host.innerHTML = rows.map(r =>
+      '<button type="button" class="card" data-rep="' + esc(r.s.id) + '">' +
+        '<div class="card__top"><span class="grow">' + esc((CLASSES[r.s.user_class] || {}).label || 'Gear') + '</span>' +
+          (r.waiting ? '<span class="chip chip--warn">Reply waiting</span>' : '') +
+          '<span class="chip">' + esc((StatusModule.LABELS || {})[r.s.status] || r.s.status) + '</span></div>' +
+        '<div class="card__sub">' + esc(ageOf(r.s.created_at)) + '</div>' +
+        (r.last ? '<div class="card__sub">“' + esc(r.last.text.slice(0, 70)) + '”</div>' : '') +
+      '</button>').join('');
+    host.querySelectorAll('[data-rep]').forEach(b => b.onclick = () => {
+      const row = rows.find(r => r.s.id === b.dataset.rep);
+      if (row) openThread(row.s);
+    });
+  }
+
+  async function updateReplyCount() {
+    try {
+      const rows = await myReportsState();
+      const n = rows.filter(r => r.waiting).length;
+      const b = $('reply-count');
+      b.textContent = n;
+      b.hidden = n === 0;
+    } catch (e) { /* the list screen reports errors; the badge just stays hidden */ }
+  }
+
+  // ============================================================ gear checks
+
+  // "Is it still there?" pop-up. The answer is sent after the undo time; Undo
+  // brings the question back.
+  function showAsk(s, distance, done) {
+    const type = ((CLASSES[s.user_class] || {}).label || 'Gear').toLowerCase();
+    $('ask-title').textContent = 'Is the ' + type + ' still here?';
+    $('ask-dist').textContent = Math.round(distance) + ' m away';
+    $('ask-sub').textContent = 'Reported ' + ageOf(s.created_at) +
+      (s.last_confirmed_at ? ' · seen ' + ageOf(s.last_confirmed_at) : '');
+    const img = $('ask-photo');
+    img.hidden = !s.photo_url;
+    if (s.photo_url) img.src = s.photo_url;
+    $('ask').hidden = false;
+
+    const send = value => {
+      $('ask').hidden = true;
+      withUndo(value === 'here' ? '“Still here” sent' : '“Gone” sent', async () => {
+        const r = await StillThere.answer(s, value, distance);
+        if (!r.ok) { toast(r.message || 'Answer not sent'); StillThere.skip(s); }
+        done();
+        StillThere.reload();
+      }, () => showAsk(s, distance, done));
+    };
+    $('ask-here').onclick = () => send('here');
+    $('ask-gone').onclick = () => send('gone');
+    $('ask-skip').onclick = () => { $('ask').hidden = true; StillThere.skip(s); done(); };
+  }
+
+  // Questions only appear on calm screens, never in the middle of a report.
+  function canAsk() {
+    return CALM.includes(stack[stack.length - 1]) && $('ask').hidden && !pending;
+  }
+
+  function paintWatch(st) {
+    const line = $('watch-line');
+    line.hidden = !st || !st.text;
+    $('watch-text').textContent = st ? st.text : '';
+    $('watch-dot').dataset.state = st && st.kind === 'on' ? 'ok' : (st && (st.kind === 'night' || st.kind === 'weak') ? 'weak' : '');
+  }
+
+  function startGearChecks() {
+    // Desktop testing only: localStorage.netsight_mock_time = an ISO time.
+    if (!Native.isNative) {
+      StillThere.setClock(() => {
+        try { const m = localStorage.getItem('netsight_mock_time'); if (m) return new Date(m); } catch (e) { /* real clock */ }
+        return new Date();
+      });
+    }
+    StillThere.start({ onAsk: showAsk, canAsk, onState: paintWatch })
+      .catch(err => { console.warn('Gear checks did not start:', err); });
+  }
+
+  // ======================================================== test this phone
+
+  function renderDiag() {
+    const t = StillThere.sunTimes(new Date(), gps && gps.lat ? gps.lat : CONFIG.MAP_CENTER[0], gps && gps.lon ? gps.lon : CONFIG.MAP_CENTER[1]);
+    const clock = d => d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    $('diag-body').innerHTML =
+      '<p class="sub">' + (Native.isNative ? 'Phone app' : 'Browser: the camera opens a file picker and QR scanning is not available here') +
+        ' · build ' + esc(CONFIG.BUILD) + '</p>' +
+      '<div class="diag"><button type="button" class="btn btn--big" id="d-gps">◎ Test GPS</button><div class="diag__out" id="d-gps-out"></div></div>' +
+      '<div class="diag"><button type="button" class="btn btn--big" id="d-cam">📷 Test camera</button><div class="diag__out" id="d-cam-out"></div></div>' +
+      '<div class="diag"><button type="button" class="btn btn--big" id="d-qr">▦ Test QR scan</button><div class="diag__out" id="d-qr-out"></div></div>' +
+      '<div class="diag"><div class="diag__out">' + (t
+        ? 'Today: sunrise ' + esc(clock(t.rise)) + ', sunset ' + esc(clock(t.set)) + '. Gear checks are ' +
+          (StillThere.isDaylight(new Date(), gps && gps.lat ? gps.lat : CONFIG.MAP_CENTER[0], gps && gps.lon ? gps.lon : CONFIG.MAP_CENTER[1]) ? 'running now.' : 'paused now (night).')
+        : 'Sun times unavailable.') + '</div></div>';
+
+    const out = (id, text, kind) => { const el = $(id); el.textContent = text; el.className = 'diag__out ' + (kind || ''); };
+
+    $('d-gps').onclick = async () => {
+      out('d-gps-out', 'Looking for GPS…');
+      try {
+        const p = await Native.position();
+        gps = { lat: p.lat, lon: p.lon, accuracy: p.accuracy, at: Date.now() };
+        out('d-gps-out', '✓ ' + p.lat.toFixed(5) + ', ' + p.lon.toFixed(5) + ' · ±' + Math.round(p.accuracy) + ' m' +
+          (p.accuracy > 50 ? ' (too rough for gear checks: go outside)' : ''), p.accuracy > 50 ? '' : 'ok');
+      } catch (err) { out('d-gps-out', '✗ ' + friendly(err), 'bad'); }
+    };
+
+    $('d-cam').onclick = async () => {
+      out('d-cam-out', 'Opening camera…');
+      try {
+        const f = await Native.photo();
+        if (!f) { out('d-cam-out', 'Cancelled'); return; }
+        const url = URL.createObjectURL(f);
+        $('d-cam-out').className = 'diag__out ok';
+        $('d-cam-out').innerHTML = '✓ ' + Math.round(f.size / 1024) + ' KB<br><img alt="Test photo" src="' + url + '">';
+      } catch (err) { out('d-cam-out', '✗ ' + friendly(err), 'bad'); }
+    };
+
+    $('d-qr').onclick = async () => {
+      out('d-qr-out', 'Opening scanner…');
+      try {
+        const raw = await Native.scanQr();
+        out('d-qr-out', raw ? '✓ Read: ' + raw : 'Nothing scanned', raw ? 'ok' : '');
+      } catch (err) { out('d-qr-out', '✗ ' + friendly(err), 'bad'); }
+    };
   }
 
   // =============================================================== identify
@@ -687,6 +962,10 @@
     $('btn-id-code').onclick = identifyByCode;
     $('id-code').addEventListener('keydown', e => { if (e.key === 'Enter') identifyByCode(); });
 
+    $('tab-decide').onclick = () => { casesTab = 'decide'; renderCases(); };
+    $('tab-collect').onclick = () => { casesTab = 'collect'; renderCases(); };
+    $('btn-diag').onclick = () => go('diag');
+
     $('undo-btn').onclick = undoPending;
     $('btn-signout').onclick = () => Auth.logout();
 
@@ -706,6 +985,7 @@
     bind();
     initCasePickers();
     show('home');
+    startGearChecks();
   }
 
   init().catch(err => {

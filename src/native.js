@@ -10,9 +10,23 @@ import { BarcodeScanner, BarcodeFormat } from '@capacitor-mlkit/barcode-scanning
 
 const isNative = Capacitor.isNativePlatform();
 
+// ------------------------------------------------------- browser-only fake GPS
+// For trying the app on a desktop: localStorage.netsight_mock_gps =
+// '{"lat":56.95,"lon":24.1,"accuracy":8}'. Never used in the phone app.
+function mockFix() {
+  if (isNative) return null;
+  try {
+    const m = JSON.parse(localStorage.getItem('netsight_mock_gps') || 'null');
+    if (m && Number.isFinite(m.lat) && Number.isFinite(m.lon)) return { lat: m.lat, lon: m.lon, accuracy: m.accuracy || 8 };
+  } catch (e) { /* ignore */ }
+  return null;
+}
+
 // ---------------------------------------------------------------- position
 // -> { lat, lon, accuracy }  (throws an Error with a sentence a person can read)
 async function position() {
+  const fake = mockFix();
+  if (fake) return fake;
   if (isNative) {
     const perm = await Geolocation.requestPermissions();
     if (perm.location !== 'granted' && perm.coarseLocation !== 'granted') {
@@ -25,6 +39,30 @@ async function position() {
   } catch (e) {
     throw new Error('No GPS fix yet. Move away from cover and try again.');
   }
+}
+
+// Continuous position, for the "is it still there?" checks. Resolves to a stop
+// function. onPos gets { lat, lon, accuracy }; onErr is called when GPS is lost.
+async function watch(onPos, onErr) {
+  if (mockFix()) {
+    const t = setInterval(() => { const f = mockFix(); if (f) onPos(f); }, 1000);
+    return () => clearInterval(t);
+  }
+  if (isNative) {
+    const perm = await Geolocation.requestPermissions();
+    if (perm.location !== 'granted' && perm.coarseLocation !== 'granted') {
+      if (onErr) onErr(new Error('Location is switched off'));
+      return () => {};
+    }
+  }
+  const id = await Geolocation.watchPosition(
+    { enableHighAccuracy: true, timeout: 20000, maximumAge: 1000 },
+    (p, err) => {
+      if (err || !p) { if (onErr) onErr(err); return; }
+      onPos({ lat: p.coords.latitude, lon: p.coords.longitude, accuracy: p.coords.accuracy });
+    }
+  );
+  return () => { Geolocation.clearWatch({ id }); };
 }
 
 // ------------------------------------------------------------------- photo
@@ -92,4 +130,4 @@ function onBack(handler) {
   });
 }
 
-window.Native = { isNative, position, photo, scanQr, onBack };
+window.Native = { isNative, position, watch, photo, scanQr, onBack };

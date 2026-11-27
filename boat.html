@@ -30,6 +30,10 @@
         <span class="status__dot" id="gps-dot"></span>
         <span id="status-text">Looking for GPS…</span>
       </div>
+      <div class="status status--sub" id="watch-line" hidden>
+        <span class="status__dot" id="watch-dot"></span>
+        <span id="watch-text"></span>
+      </div>
       <p class="notice" id="admin-note" hidden>Administration is on the website. This app is for the water.</p>
 
       <div class="stack">
@@ -39,6 +43,10 @@
 
         <button type="button" class="btn btn--big" data-go="nets" data-role-show="user">
           <span class="btn__icon">🕸️</span>My nets
+        </button>
+
+        <button type="button" class="btn btn--big" data-go="my-reports" data-role-show="user">
+          <span class="btn__icon">💬</span>My reports <span class="badge" id="reply-count" hidden>0</span>
         </button>
 
         <button type="button" class="btn btn--big btn--primary" data-go="cases" data-role-show="patrol admin">
@@ -52,6 +60,7 @@
 
       <div class="foot">
         <span class="foot__who"><span data-user-name>—</span> · <span data-role-label></span></span>
+        <button type="button" class="btn btn--quiet" id="btn-diag">Test phone</button>
         <button type="button" class="btn btn--quiet" id="btn-signout">Sign out</button>
       </div>
     </section>
@@ -131,6 +140,10 @@
     <!-- ===================================================== patrol: cases -->
     <section class="screen" id="screen-cases" data-title="Cases">
       <div class="stack">
+        <div class="tabs" role="tablist">
+          <button type="button" class="tab is-on" id="tab-decide" role="tab">To decide <span class="badge badge--tab" id="n-decide">0</span></button>
+          <button type="button" class="tab" id="tab-collect" role="tab">To collect <span class="badge badge--tab" id="n-collect">0</span></button>
+        </div>
         <div class="list" id="cases-list"></div>
       </div>
     </section>
@@ -164,7 +177,35 @@
       <div class="stack" id="identify-body"></div>
     </section>
 
+
+    <!-- ===================================================== messages, phone test -->
+    <section class="screen" id="screen-my-reports" data-title="My reports">
+      <div class="stack"><div class="list" id="myreports-list"></div></div>
+    </section>
+
+    <section class="screen" id="screen-thread" data-title="Messages">
+      <div class="stack" id="thread-body"></div>
+    </section>
+
+    <section class="screen" id="screen-diag" data-title="Test phone">
+      <div class="stack" id="diag-body"></div>
+    </section>
+
   </main>
+
+  <!-- "Is it still there?": appears over any calm screen when a boat is close to a
+       reported object in daylight. See js/stillthere.js. -->
+  <section class="ask" id="ask" hidden role="dialog" aria-modal="true" aria-labelledby="ask-title">
+    <div class="ask__box">
+      <p class="ask__kicker">Gear check · <span id="ask-dist"></span></p>
+      <h2 class="ask__title" id="ask-title">Is it still here?</h2>
+      <img class="photo" id="ask-photo" alt="" hidden>
+      <p class="sub" id="ask-sub"></p>
+      <button type="button" class="btn btn--hero btn--go" id="ask-here"><span class="btn__icon">✓</span>Still here</button>
+      <button type="button" class="btn btn--hero btn--danger" id="ask-gone"><span class="btn__icon">✕</span>It's gone</button>
+      <button type="button" class="btn btn--quiet" id="ask-skip">Not sure</button>
+    </div>
+  </section>
 
   <!-- Undo bar: appears after an action, runs it when the time is up. -->
   <div class="undo" id="undo" hidden role="status">
@@ -182,6 +223,7 @@
   <script src="js/qr.js"></script>
   <script src="js/cases.js"></script>
   <script src="js/identify.js"></script>
+  <script src="js/stillthere.js"></script>
   <script src="js/shore.js"></script>
   <script src="js/location.js"></script>
   <script src="js/registry.js"></script>
