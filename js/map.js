@@ -434,6 +434,29 @@ const MapModule = (function() {
     return shape.coords;
   }
 
+// Frames the drawn water so the red limit lines are actually on screen when
+  // somebody opens the app. Showing a layer that sits outside the viewport is
+  // the same as hiding it.
+  function fitToWater() {
+    if (!map || typeof Shore === 'undefined') return false;
+
+    const shapes = Shore.all();
+    if (!shapes.length) return false;
+
+    const pts = [];
+    shapes.forEach(shape => {
+      if (shape.kind === 'circle') {
+        shapeLatLngs(shape).forEach(p => pts.push(p));
+      } else if (Array.isArray(shape.coords)) {
+        shape.coords.forEach(p => pts.push([p[0], p[1]]));
+      }
+    });
+
+    if (!pts.length) return false;
+
+    map.fitBounds(L.latLngBounds(pts), { padding: [28, 28], maxZoom: 15 });
+    return true;
+  }
   function toggleZones(show) {
     if (!map || !zoneLayer) return false;
 
@@ -981,6 +1004,7 @@ const MapModule = (function() {
     renderDevices,
     toggleDeviceLayer,
     toggleZones,
+    fitToWater,
     openPicker,
     closePicker,
     confirmPicker,
@@ -997,6 +1021,7 @@ if (typeof module !== 'undefined' && module.exports) {
 } else {
   window.MapModule = MapModule;
 }
+
 
 
 

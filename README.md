@@ -125,6 +125,12 @@ to disappoint, is in **[docs/HARDWARE.md](docs/HARDWARE.md)**.
 
 ### The 50 m line
 
+The permitted water is drawn on the map from the first frame, for every role —
+the red limit, the dashed bank and the green wash. It is not a setting you have
+to find: the rule of the app is that gear only goes in the water, so the water
+has to be visible. The map also opens framed on it, because a layer that sits
+outside the viewport is the same as a hidden one.
+
 The map draws two things over the water:
 
 * a **soft green wash** — the water you may legally use
@@ -435,6 +441,7 @@ FileReader, fetch, `color-mix()` (graceful fallback), CSS Grid.
 ## License
 
 MIT — prototype for demonstration purposes.
+
 
 
 

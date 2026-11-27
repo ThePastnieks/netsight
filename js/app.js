@@ -1,4 +1,4 @@
-﻿// NetSight Application
+// NetSight Application
 // Wires the map, the reporting flow and storage together.
 //
 // The rule this file enforces: gear only goes in permitted water. Not a warning
@@ -167,8 +167,15 @@ const App = (function() {
       });
     }
 
+    // Permitted water is on from the first frame, for every role. The whole
+    // rule of the app is "gear only goes in the water", so the water has to be
+    // visible without anybody going into settings to find it.
+    MapModule.toggleZones(true);
+    MapModule.fitToWater();
+
     const zoneToggle = document.getElementById('toggle-zones');
     if (zoneToggle) {
+      zoneToggle.checked = true;
       zoneToggle.addEventListener('change', e => {
         MapModule.toggleZones(e.target.checked);
         UIModule.showToast(
